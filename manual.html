@@ -143,10 +143,12 @@
         <div class="new-feature">
             <strong>New Features:</strong>
             <ul>
-                <li>Continuous playlist playback with toggle switch</li>
-                <li>Improved slider-style toggle controls</li>
-                <li>Next video button for manual playlist navigation</li>
-                <li>Comprehensive logging system for better troubleshooting</li>
+                <li>Tabbed Playlist: Filter videos by YouTube, Twitter/X, or view all</li>
+                <li>Video Details Panel: View metadata with the Show Details button</li>
+                <li>Direct Source URLs: Open original video sources in your browser</li>
+                <li>Twitter/X Support: Download videos from Twitter and X (formerly Twitter)</li>
+                <li>File Stats: View file size, creation date, and other metadata</li>
+                <li>UI Improvements: Cleaner interface with better controls</li>
             </ul>
         </div>
     </div>
@@ -169,7 +171,7 @@
         
         <h3>Downloading Videos</h3>
         <ol>
-            <li>Copy the URL of a video from a supported platform</li>
+            <li>Copy the URL of a video from a supported platform (YouTube, Twitter/X, etc.)</li>
             <li>Paste the URL into the input field</li>
             <li>Click the "Download" button (or press Enter)</li>
             <li>Wait for the download to complete</li>
@@ -181,15 +183,23 @@
 
         <h3>Playing Videos</h3>
         <ol>
-            <li>Click any video in the playlist to play it (cursor will change to pointer when hovering)</li>
-            <li>Use the video player controls to:
+            <li>Click any video in the playlist to play it</li>
+            <li>Use the video player controls to play/pause, adjust volume, or toggle full screen</li>
+            <li>Click the "Show Details" button to view metadata about the current video</li>
+        </ol>
+
+        <h3>Video Details</h3>
+        <ul>
+            <li>Click the "Show Details" button under the video player to see:
                 <ul>
-                    <li>Play/Pause</li>
-                    <li>Adjust volume</li>
-                    <li>Toggle full screen</li>
+                    <li>Source platform (YouTube, Twitter/X, etc.)</li>
+                    <li>Original URL (clickable)</li>
+                    <li>Date and time the video was added</li>
+                    <li>File size</li>
+                    <li>Filename in the cache</li>
                 </ul>
             </li>
-        </ol>
+        </ul>
 
         <h3>Playback Control Options</h3>
         
@@ -237,25 +247,43 @@
         <ul>
             <li>Videos are automatically added to the playlist when downloaded</li>
             <li>Videos are automatically sorted alphabetically by title</li>
+            <li>Use the tabs (All Videos, YouTube, Twitter/X) to filter the playlist</li>
             <li>Click on any video in the playlist to play it</li>
             <li>The currently playing video is highlighted in the playlist</li>
+            <li>Click the "Source" button to open the original video in your browser</li>
             <li>Click the "Remove" button to delete a video from both playlist and cache</li>
-            <li>Playlist is saved automatically and persists between sessions</li>
         </ul>
+        
+        <div class="tip">
+            <strong>Tip:</strong> The "Source" button is particularly useful for sharing links to the original content with others or for visiting the original page to see comments or related videos.
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Supported Platforms</h2>
+        <ul>
+            <li><strong>YouTube:</strong> Videos from youtube.com and youtu.be</li>
+            <li><strong>Twitter/X:</strong> Videos from twitter.com and x.com</li>
+            <li><strong>Other platforms:</strong> The application supports many other video platforms</li>
+        </ul>
+        
+        <div class="note">
+            <p>The application automatically detects the source platform and uses the appropriate download method. Twitter/X videos use specialized extraction methods to ensure compatibility.</p>
+        </div>
     </div>
 
     <div class="section">
         <h2>Cache Location</h2>
         <p>Videos are stored in your Downloads folder:</p>
         <ul>
-            <li>Windows: <code>%USERPROFILE%\Downloads\mucache</code></li>
-            <li>Linux/macOS: <code>~/Downloads/mucache</code></li>
+            <li>Windows: <code>%USERPROFILE%\Downloads\mucache\data</code></li>
+            <li>Linux/macOS: <code>~/Downloads/mucache/data</code></li>
         </ul>
     </div>
     
     <div class="section">
         <h2>Log Files</h2>
-        <p>The application maintains detailed logs in the <code>mucache/logs</code> directory:</p>
+        <p>The application maintains detailed logs in the <code>mucache/data/logs</code> directory:</p>
         
         <table class="logs-table">
             <tr>
@@ -296,6 +324,7 @@
         <h3>Common Issues</h3>
         <ul>
             <li><strong>Download fails:</strong> Check your internet connection and verify the URL is from a supported platform</li>
+            <li><strong>Twitter/X videos fail:</strong> Some Twitter/X videos may require multiple attempts or may not be downloadable</li>
             <li><strong>Video won't play:</strong> Ensure the video file wasn't moved or deleted from the cache directory</li>
             <li><strong>Application won't start:</strong> Make sure port 8000 is available and you have Python installed</li>
             <li><strong>Application doesn't close:</strong> Close the browser window or use Ctrl+C in the terminal</li>
@@ -324,7 +353,10 @@
             <li>The application runs a local web server on port 8000</li>
             <li>Videos are stored in MP4 format</li>
             <li>Playlist data is stored in a JSON file in the cache directory</li>
+            <li>Twitter/X videos use specialized extraction methods</li>
+            <li>File metadata is available via API</li>
             <li>The application uses HTML5 video playback capabilities</li>
+            <li>React is used for the UI with Tailwind CSS for styling</li>
             <li>Uses a heartbeat mechanism to detect browser window closure</li>
             <li>Implements a threaded server for better performance</li>
             <li>Files are streamed in chunks to handle large videos efficiently</li>
