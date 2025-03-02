@@ -127,18 +127,42 @@
             const downloadVideo = async () => {
                 if (!url) return;
                 setStatus('Processing...');
+                
                 try {
                     const response = await fetch(`/download?url=${encodeURIComponent(url)}`);
-                    const data = await response.json();
-                    if (data.filename) {
-                        setStatus(data.fromCache ? '[CACHE] Retrieved' : '[NEW] Downloaded');
-                        await loadPlaylist();
-                        const newVideoIndex = videos.findIndex(v => v.filename === data.filename);
-                        if (newVideoIndex !== -1) { setCurrentIndex(newVideoIndex); }
-                        setUrl('');
-                        setTimeout(() => setStatus(''), 3000);
+                    
+                    let data;
+                    try {
+                        const text = await response.text();
+                        data = JSON.parse(text);
+                    } catch (parseError) {
+                        setStatus(`Error: ${parseError.message}`);
+                        console.error("JSON Parse error:", parseError);
+                        return;
                     }
-                } catch (error) { setStatus('Error: ' + error.message); }
+                    
+                    if (data.error) {
+                        const errorMsg = data.details || data.error;
+                        setStatus(`Error: ${errorMsg}`);
+                    } else if (data.filename) {
+                        setStatus(data.fromCache ? 
+                            `[CACHE] Retrieved ${data.filename}` : 
+                            `[NEW] Downloaded ${data.filename}`);
+                            
+                        // Reload playlist without changing current video
+                        await loadPlaylist();
+                        
+                        // Don't change current index - remove this line:
+                        // setCurrentIndex(newVideoIndex);
+                        
+                        setUrl('');
+                        setTimeout(() => setStatus(''), 5000);
+                    } else {
+                        setStatus('Error: Unknown response format');
+                    }
+                } catch (error) {
+                    setStatus(`Error: ${error.message || 'Unknown error'}`);
+                }
             };
             
             const playVideo = (filename) => {
@@ -149,22 +173,44 @@
                 }
             };
             
+
             const removeVideo = async (url, e) => {
                 e.stopPropagation();
                 try {
+                    const isCurrentlyPlaying = videos.findIndex(v => v.url === url) === currentIndex;
+                    
                     const response = await fetch(`/remove?url=${encodeURIComponent(url)}`, { method: 'POST' });
                     if (response.ok) {
-                        const removedIndex = videos.findIndex(v => v.url === url);
-                        if (removedIndex === currentIndex && videos.length > 1) {
-                            setCurrentIndex(prevIndex => prevIndex >= videos.length - 1 ? 0 : prevIndex);
-                        } else if (removedIndex < currentIndex) {
-                            setCurrentIndex(prevIndex => prevIndex - 1);
-                        }
                         await loadPlaylist();
+                        
+                        // Handle removal of currently playing video
+                        if (isCurrentlyPlaying) {
+                            if (videos.length > 0) {
+                                // Play the next video, or first if we were at the end
+                                const newIndex = currentIndex >= videos.length ? 0 : currentIndex;
+                                setCurrentIndex(newIndex);
+                                if (videoRef.current) {
+                                    videoRef.current.load();
+                                    videoRef.current.play().catch(e => console.warn('Auto-play error:', e));
+                                }
+                            } else {
+                                // No videos left
+                                setStatus('No videos in playlist. Please download a video.');
+                                // Clear the video player
+                                if (videoRef.current) {
+                                    videoRef.current.src = '';
+                                    videoRef.current.load();
+                                }
+                            }
+                        } else if (currentIndex >= videos.length && videos.length > 0) {
+                            // If current index is now out of bounds but videos exist
+                            setCurrentIndex(0);
+                        }
                     }
-                } catch (error) { console.error('Error removing video:', error); }
+                } catch (error) {
+                    console.error('Error removing video:', error);
+                }
             };
-            
             const handleVideoEnd = () => {
                 if (isLooping) {
                     if (videoRef.current) { videoRef.current.currentTime = 0; videoRef.current.play(); }
