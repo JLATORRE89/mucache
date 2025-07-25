@@ -59,6 +59,57 @@ def sanitize_filename(filename):
     
     return safe_name.strip()
 
+def check_available_formats(url, logger=None):
+    """Check what formats are available for a given URL."""
+    try:
+        with yt_dlp.YoutubeDL({
+            'quiet': True,
+            'no_warnings': True,
+            'listformats': True
+        }) as ydl:
+            info = ydl.extract_info(url, download=False)
+            
+            if 'formats' in info:
+                available_formats = []
+                for fmt in info['formats']:
+                    format_info = {
+                        'format_id': fmt.get('format_id'),
+                        'ext': fmt.get('ext'),
+                        'resolution': fmt.get('resolution', 'audio only'),
+                        'filesize': fmt.get('filesize'),
+                        'vcodec': fmt.get('vcodec', 'none'),
+                        'acodec': fmt.get('acodec', 'none')
+                    }
+                    available_formats.append(format_info)
+                
+                if logger:
+                    safe_log(logger, 'info', f"Available formats for {url}:")
+                    for fmt in available_formats[:5]:  # Log first 5 formats
+                        safe_log(logger, 'info', f"  {fmt}")
+                
+                return available_formats
+            
+    except Exception as e:
+        if logger: safe_log(logger, 'error', f"Error checking formats: {str(e)}")
+        return []
+
+def get_best_available_format(url, logger=None):
+    """Get the best available format for a URL."""
+    formats = check_available_formats(url, logger)
+    
+    # Priority: MP4 with video, then any video format, then audio
+    mp4_video_formats = [f for f in formats if f['ext'] == 'mp4' and f['vcodec'] != 'none']
+    video_formats = [f for f in formats if f['vcodec'] != 'none']
+    
+    if mp4_video_formats:
+        return mp4_video_formats[0]['format_id']
+    elif video_formats:
+        return video_formats[0]['format_id']
+    elif formats:
+        return formats[0]['format_id']
+    
+    return 'best'
+
 class VideoManager:
     def __init__(self, cache_dir):
         self.cache_dir = cache_dir
@@ -185,7 +236,7 @@ def download_twitter_video(url, cache_dir, manager, logger=None):
         return None, False
 
 def download_video(url, cache_dir, manager, logger=None):
-    """Main download function with special handling for Twitter/X."""
+    """Main download function with improved format handling."""
     try:
         # Check if already cached
         if url in manager.videos:
@@ -202,15 +253,16 @@ def download_video(url, cache_dir, manager, logger=None):
             if logger: safe_log(logger, 'info', f"Detected Twitter/X URL")
             return download_twitter_video(url, cache_dir, manager, logger)
         
-        # Handle YouTube videos
+        # Handle YouTube videos with improved format selection
         current_dir = os.getcwd()
         os.chdir(str(cache_dir))
         
         try:
-            # Get info and title
+            # Get info and title first
             with yt_dlp.YoutubeDL({
                 'skip_download': True,
-                'quiet': True
+                'quiet': True,
+                'no_warnings': True
             }) as ydl:
                 info = ydl.extract_info(url, download=False)
                 title = info.get('title', 'unknown')
@@ -218,13 +270,44 @@ def download_video(url, cache_dir, manager, logger=None):
             # Track files before download
             before_files = set(f.name for f in cache_dir.iterdir() if f.is_file())
             
-            # Download the video
-            with yt_dlp.YoutubeDL({
-                'format': 'best',
-                'outtmpl': '%(title)s.%(ext)s',
-                'quiet': True
-            }) as ydl:
-                ydl.download([url])
+            # Try multiple format strategies
+            format_options = [
+                'best[ext=mp4]',  # Best MP4 format
+                'best[height<=720][ext=mp4]',  # 720p MP4 as fallback
+                'best[height<=480][ext=mp4]',  # 480p MP4 as fallback
+                'worst[ext=mp4]',  # Any MP4 format
+                'best',  # Any best format
+            ]
+            
+            download_success = False
+            for format_selector in format_options:
+                try:
+                    if logger: safe_log(logger, 'info', f"Trying format: {format_selector}")
+                    
+                    # Download the video with current format
+                    with yt_dlp.YoutubeDL({
+                        'format': format_selector,
+                        'outtmpl': '%(title)s.%(ext)s',
+                        'quiet': True,
+                        'no_warnings': True,
+                        'writeinfojson': False,
+                        'writedescription': False,
+                        'writesubtitles': False,
+                        'writeautomaticsub': False,
+                    }) as ydl:
+                        ydl.download([url])
+                    
+                    download_success = True
+                    if logger: safe_log(logger, 'info', f"Download successful with format: {format_selector}")
+                    break
+                    
+                except Exception as format_error:
+                    if logger: safe_log(logger, 'warning', f"Format {format_selector} failed: {str(format_error)}")
+                    continue
+            
+            if not download_success:
+                if logger: safe_log(logger, 'error', "All format options failed")
+                return None, False
             
             # Find new files
             after_files = set(f.name for f in cache_dir.iterdir() if f.is_file())
@@ -241,7 +324,7 @@ def download_video(url, cache_dir, manager, logger=None):
                     safe_name = sanitize_filename(new_filename)
                     
                     # Keep original extension
-                    if "." in new_filename and not safe_name.endswith(".mp4"):
+                    if "." in new_filename and not safe_name.endswith(new_filename.split(".")[-1]):
                         ext = new_filename.split(".")[-1]
                         safe_name = f"{safe_name}.{ext}"
                     
@@ -252,6 +335,7 @@ def download_video(url, cache_dir, manager, logger=None):
                     try:
                         new_path.rename(safe_path)
                         new_filename = safe_name
+                        if logger: safe_log(logger, 'info', f"Renamed file to: {safe_name}")
                     except Exception as e:
                         if logger: safe_log(logger, 'error', f"Error renaming: {str(e)}")
                 
@@ -267,8 +351,10 @@ def download_video(url, cache_dir, manager, logger=None):
                 recent_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
                 newest_file = recent_files[0]
                 manager.add_video(url, title, newest_file.name)
+                if logger: safe_log(logger, 'info', f"Using recent file: {newest_file.name}")
                 return newest_file.name, False
             
+            if logger: safe_log(logger, 'error', "No files found after download")
             return None, False
             
         finally:
@@ -438,7 +524,13 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             if not url:
                 self.send_json({'error': 'No URL provided'})
                 return
-                
+            
+            if self.logger: safe_log(self.logger, 'info', f"Starting download for: {url}")
+            
+            # Check if it's a supported platform
+            if not any(platform in url.lower() for platform in ['youtube.com', 'youtu.be', 'twitter.com', 'x.com']):
+                if self.logger: safe_log(self.logger, 'warning', f"Unsupported platform detected: {url}")
+            
             filename, from_cache = download_video(url, self.video_manager.cache_dir, self.video_manager, self.logger)
             
             if filename:
@@ -450,6 +542,8 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                     file_info['size'] = file_path.stat().st_size
                     file_info['created'] = datetime.datetime.fromtimestamp(file_path.stat().st_ctime).isoformat()
                     
+                if self.logger: safe_log(self.logger, 'info', f"Download successful: {filename}")
+                    
                 self.send_json({
                     'filename': filename, 
                     'fromCache': from_cache,
@@ -457,14 +551,29 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                     'status': 'success'
                 })
             else:
+                error_msg = 'Download failed - this could be due to YouTube anti-bot measures. Try updating yt-dlp with: pip install --upgrade yt-dlp'
+                if self.logger: safe_log(self.logger, 'error', error_msg)
+                
                 self.send_json({
                     'error': 'Download failed',
-                    'details': 'Unable to download or locate the video file.',
-                    'status': 'error'
+                    'details': error_msg,
+                    'status': 'error',
+                    'suggestion': 'Update yt-dlp: pip install --upgrade yt-dlp'
                 })
         except Exception as e:
-            if self.logger: safe_log(self.logger, 'error', f"Download error: {str(e)}")
-            self.send_json({'error': str(e)})
+            error_msg = f"Download error: {str(e)}"
+            if self.logger: safe_log(self.logger, 'error', error_msg)
+            
+            # Check if it's a signature extraction error
+            if 'nsig extraction failed' in str(e) or 'Requested format is not available' in str(e):
+                suggestion = 'This appears to be a YouTube signature issue. Please update yt-dlp: pip install --upgrade yt-dlp'
+            else:
+                suggestion = 'Check the logs for more details'
+                
+            self.send_json({
+                'error': error_msg,
+                'suggestion': suggestion
+            })
 
     def send_json(self, data):
         try:
@@ -481,6 +590,13 @@ def main():
     
     logger = setup_logging(cache_dir)
     logger.info("=== Mucache Player Starting ===")
+    
+    # Log yt-dlp version for debugging
+    try:
+        import yt_dlp
+        logger.info(f"yt-dlp version: {yt_dlp.version.__version__}")
+    except:
+        logger.warning("Could not determine yt-dlp version")
     
     video_manager = VideoManager(cache_dir)
     logger.info(f"Loaded {len(video_manager.videos)} videos from playlist")
