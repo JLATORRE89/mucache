@@ -1,6 +1,31 @@
-<!DOCTYPE html>
+<h4>Research Documentation Workflow</h4>
+        <ol>
+            <li><strong>Content Collection:</strong> Gather archived videos by topic, creator, or time period</li>
+            <li><strong>Download with Metadata:</strong> Use Mucache Player to capture comprehensive metadata</li>
+            <li><strong>Generate Citations:</strong> Click "Generate Citations" for properly formatted academic references</li>
+            <li><strong>Customize as Needed:</strong> Override titles, authors, or dates for specific citation requirements</li>
+            <li><strong>Export Multiple Formats:</strong> Get citations in APA, MLA, Chicago, Harvard, IEEE, Vancouver, and BibTeX</li>
+            <li><strong>Organize Research:</strong> Use generated citation files for bibliography management</li>
+        </ol>
+        
+        <p><strong>Example Use Case:</strong> A researcher studying digital content preservation can:</p>
+        <ul>
+            <li>Track how content migrated from YouTube to Archive.org</li>
+            <li>Generate proper citations for academic papers</li>
+            <li>Analyze what types of content were prioritized for preservation</li>
+            <li>Study content creator responses to platform policy changes</li>
+            <li>Document the gap between original publication and archival preservation</li>
+            <li>Create bibliographies with multiple citation formats</li>
+        </ul>
+        
+        <div class="note">
+            <strong>Citation File Storage:</strong> Citations are saved in <code>mucache/data/citations/</code> directory with comprehensive metadata and all citation formats in a single file.
+        </div>
+    </div><!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mucache Player - User Manual</title>
     <style>
         body {
@@ -23,6 +48,7 @@
             background-color: #f4f4f4;
             padding: 2px 5px;
             border-radius: 3px;
+            font-family: 'Courier New', monospace;
         }
         .note {
             background-color: #fff3cd;
@@ -45,6 +71,12 @@
         .new-feature {
             background-color: #f8d7da;
             border-left: 4px solid #dc3545;
+            padding: 15px;
+            margin: 10px 0;
+        }
+        .warning {
+            background-color: #fff3cd;
+            border-left: 4px solid #ff6b35;
             padding: 15px;
             margin: 10px 0;
         }
@@ -86,13 +118,26 @@
             margin-right: 10px;
             color: #555;
         }
-        img.screenshot {
-            max-width: 100%;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            margin: 10px 0;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        .quality-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            margin: 2px;
         }
+        .quality-reliable { background-color: #10B981; color: white; }
+        .quality-medium { background-color: #F59E0B; color: white; }
+        .quality-high { background-color: #8B5CF6; color: white; }
+        .ffmpeg-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 8px;
+            font-size: 11px;
+            margin-left: 4px;
+        }
+        .ffmpeg-available { background-color: #10B981; color: white; }
+        .ffmpeg-unavailable { background-color: #EF4444; color: white; }
         .logs-table {
             width: 100%;
             border-collapse: collapse;
@@ -109,6 +154,31 @@
         .logs-table tr:nth-child(even) {
             background-color: #f9f9f9;
         }
+        .format-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            font-size: 14px;
+        }
+        .format-table th, .format-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        .format-table th {
+            background-color: #f2f2f2;
+        }
+        .format-table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .legal-footer {
+            margin-top: 40px;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #666;
+        }
     </style>
 </head>
 <body>
@@ -116,7 +186,7 @@
 
     <div class="section">
         <h2>Getting Started</h2>
-        <p>Mucache Player is a local web application that allows you to download and store videos from supported online platforms for high-quality offline playback.</p>
+        <p>Mucache Player is a local web application that allows you to download and store videos from supported online platforms for high-quality offline playback. The application now features intelligent quality management and optional FFmpeg integration for enhanced video processing.</p>
         
         <div class="tip">
             <strong>Quick Start:</strong>
@@ -124,44 +194,109 @@
                 <li>Run <code>python cache.py</code></li>
                 <li>The application will open in your default web browser</li>
                 <li>Paste a video URL and click "Download"</li>
+                <li>Adjust quality settings via the "Quality Settings" button if needed</li>
             </ol>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Quality System Overview</h2>
+        <p>The application features a three-tier quality system designed to balance reliability with video quality:</p>
+        
+        <div class="format-table">
+            <table class="format-table">
+                <tr>
+                    <th>Quality Level</th>
+                    <th>Description</th>
+                    <th>Requirements</th>
+                    <th>Typical Resolution</th>
+                </tr>
+                <tr>
+                    <td><span class="quality-badge quality-reliable">RELIABLE</span></td>
+                    <td>Uses YouTube format 18 - guaranteed to work without signature extraction issues</td>
+                    <td>None (always available)</td>
+                    <td>360p with audio</td>
+                </tr>
+                <tr>
+                    <td><span class="quality-badge quality-medium">MEDIUM</span></td>
+                    <td>Attempts higher quality formats with reliable fallbacks</td>
+                    <td>None (graceful fallback)</td>
+                    <td>720p when possible, 360p fallback</td>
+                </tr>
+                <tr>
+                    <td><span class="quality-badge quality-high">HIGH</span></td>
+                    <td>Downloads separate video/audio streams and merges for best quality</td>
+                    <td>FFmpeg installation required</td>
+                    <td>1080p, 720p, 480p with high bitrate</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="quality-info">
+            <p><strong>Quality Recommendation:</strong></p>
+            <ul>
+                <li><strong>Start with RELIABLE</strong> - This solves signature extraction issues and always works</li>
+                <li><strong>Upgrade to MEDIUM</strong> - Once you verify basic functionality</li>
+                <li><strong>Install FFmpeg for HIGH</strong> - Only if you need the best possible quality</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>FFmpeg Integration</h2>
+        <p>FFmpeg is an optional but powerful addition that enables high-quality video downloads by merging separate video and audio streams.</p>
+        
+        <h3>Installing FFmpeg</h3>
+        <div class="control-example">
+            <strong>Windows (Chocolatey):</strong>
+            <code>choco install ffmpeg</code>
+        </div>
+        <div class="control-example">
+            <strong>macOS (Homebrew):</strong>
+            <code>brew install ffmpeg</code>
+        </div>
+        <div class="control-example">
+            <strong>Ubuntu/Debian:</strong>
+            <code>sudo apt install ffmpeg</code>
+        </div>
+        <div class="control-example">
+            <strong>Manual Installation:</strong>
+            Visit <a href="https://ffmpeg.org/download.html" target="_blank">ffmpeg.org/download.html</a> for official installers
+        </div>
+
+        <div class="note">
+            <strong>FFmpeg Status Indicators:</strong>
+            <ul>
+                <li><span class="ffmpeg-badge ffmpeg-available">FFmpeg OK</span> - Available for high-quality merging</li>
+                <li><span class="ffmpeg-badge ffmpeg-unavailable">FFmpeg NO</span> - Not available, limited to pre-combined formats</li>
+            </ul>
         </div>
     </div>
 
     <div class="section">
         <h2>Main Features</h2>
         <ul>
-            <li><strong>High-Quality Downloads:</strong> Automatically selects best available quality</li>
+            <li><strong>Intelligent Quality Management:</strong> Three-tier system from reliable 360p to high-quality 1080p</li>
+            <li><strong>Format 18 Priority:</strong> Reliable 360p downloads that bypass signature extraction issues</li>
+            <li><strong>Optional FFmpeg Integration:</strong> High-quality video/audio merging when available</li>
             <li><strong>Superior Playback:</strong> Enhanced audio and video quality from local cache</li>
-            <li><strong>Sorted Playlist:</strong> Videos automatically arranged alphabetically</li>
-            <li><strong>Video Controls:</strong> Play, pause, and loop videos</li>
+            <li><strong>Persistent Quality Settings:</strong> Your preferences are saved between sessions</li>
+            <li><strong>Tabbed Playlist:</strong> Filter videos by platform (YouTube, Twitter/X, All)</li>
+            <li><strong>Video Details Panel:</strong> View metadata, file size, creation date, and source URLs</li>
             <li><strong>Continuous Playback:</strong> Automatically play through your entire playlist</li>
-            <li><strong>Persistent Storage:</strong> Your playlist remains available between sessions</li>
-            <li><strong>Detailed Logging:</strong> All operations are logged for troubleshooting</li>
+            <li><strong>Video Controls:</strong> Play, pause, loop, and navigate videos</li>
+            <li><strong>Comprehensive Logging:</strong> All operations logged for troubleshooting</li>
         </ul>
         
         <div class="new-feature">
-            <strong>New Features:</strong>
+            <strong>Latest Features:</strong>
             <ul>
-                <li>Tabbed Playlist: Filter videos by YouTube, Twitter/X, or view all</li>
-                <li>Video Details Panel: View metadata with the Show Details button</li>
-                <li>Direct Source URLs: Open original video sources in your browser</li>
-                <li>Twitter/X Support: Download videos from Twitter and X (formerly Twitter)</li>
-                <li>File Stats: View file size, creation date, and other metadata</li>
-                <li>UI Improvements: Cleaner interface with better controls</li>
-            </ul>
-        </div>
-    </div>
-
-    <div class="section">
-        <h2>Quality Benefits</h2>
-        <div class="quality-info">
-            <p>The application provides superior playback quality because:</p>
-            <ul>
-                <li>Downloads are always in highest available quality</li>
-                <li>Local playback eliminates streaming quality variations</li>
-                <li>No re-compression during playback</li>
-                <li>Direct file access for optimal audio performance</li>
+                <li>Quality Settings Panel with visual indicators</li>
+                <li>Automatic FFmpeg detection and status display</li>
+                <li>Smart format fallback system</li>
+                <li>Enhanced error messages with actionable suggestions</li>
+                <li>Improved Twitter/X video support</li>
+                <li>UTF-8 character encoding fixes</li>
             </ul>
         </div>
     </div>
@@ -169,37 +304,121 @@
     <div class="section">
         <h2>Using the Application</h2>
         
+        <h3>Managing Quality Settings</h3>
+        <ol>
+            <li>Click the "Quality Settings" button in the top-right corner</li>
+            <li>Choose from three quality levels:
+                <ul>
+                    <li><span class="quality-badge quality-reliable">RELIABLE</span> - Always works, 360p quality</li>
+                    <li><span class="quality-badge quality-medium">MEDIUM</span> - Attempts higher quality with fallbacks</li>
+                    <li><span class="quality-badge quality-high">HIGH</span> - Best quality (requires FFmpeg)</li>
+                </ul>
+            </li>
+            <li>Settings are automatically saved and persist between sessions</li>
+            <li>The current quality level is displayed next to the app title</li>
+        </ol>
+
         <h3>Downloading Videos</h3>
         <ol>
             <li>Copy the URL of a video from a supported platform (YouTube, Twitter/X, etc.)</li>
             <li>Paste the URL into the input field</li>
             <li>Click the "Download" button (or press Enter)</li>
             <li>Wait for the download to complete</li>
+            <li>The application will automatically select the best format based on your quality preference</li>
         </ol>
 
         <div class="note">
-            The application will show whether a video is being downloaded fresh ([NEW]) or loaded from cache ([CACHE]).
+            The application will show whether a video is being downloaded fresh ([NEW]) or loaded from cache ([CACHE]). If downloads fail, check the suggested solutions in the error message.
         </div>
 
         <h3>Playing Videos</h3>
         <ol>
             <li>Click any video in the playlist to play it</li>
-            <li>Use the video player controls to play/pause, adjust volume, or toggle full screen</li>
-            <li>Click the "Show Details" button to view metadata about the current video</li>
+            <li>Use the video player controls for play/pause, volume, and full screen</li>
+            <li>Click the "Show Details" button to view comprehensive metadata</li>
+            <li>Use the "Source" button to open the original video in your browser</li>
         </ol>
 
-        <h3>Video Details</h3>
+        <h3>Enhanced Archive.org Metadata</h3>
+        <p>For Archive.org videos, the application captures and displays comprehensive metadata including:</p>
+        
+        <h4>Basic Information</h4>
         <ul>
-            <li>Click the "Show Details" button under the video player to see:
-                <ul>
-                    <li>Source platform (YouTube, Twitter/X, etc.)</li>
-                    <li>Original URL (clickable)</li>
-                    <li>Date and time the video was added</li>
-                    <li>File size</li>
-                    <li>Filename in the cache</li>
-                </ul>
-            </li>
+            <li><strong>Title & Description:</strong> Original content titles and descriptions</li>
+            <li><strong>Creator Information:</strong> Original content creators or channels</li>
+            <li><strong>Publication Dates:</strong> Original publication date vs. archive date</li>
+            <li><strong>Runtime & Technical Details:</strong> Duration, file format, and quality information</li>
         </ul>
+        
+        <h4>Professional Metadata Features</h4>
+        <div class="warning">
+            <strong>For Journalists & Researchers:</strong>
+            <ul>
+                <li><strong>Source Verification:</strong> Original platform URLs for cross-referencing</li>
+                <li><strong>Publication Timeline:</strong> Distinguish between original publication and archive dates</li>
+                <li><strong>Creator Attribution:</strong> Accurate creator information for proper citation</li>
+                <li><strong>Content Classification:</strong> Subject tags and collection information for research organization</li>
+                <li><strong>Language Identification:</strong> Content language for international research</li>
+            </ul>
+        </div>
+        
+        <div class="tip">
+            <strong>For Legal Professionals:</strong>
+            <ul>
+                <li><strong>Chain of Custody Documentation:</strong> Complete preservation trail from original to local storage</li>
+                <li><strong>File Integrity Verification:</strong> MD5/SHA1 checksums match Archive.org originals</li>
+                <li><strong>Temporal Evidence:</strong> Multiple timestamps (original, archived, downloaded) for legal proceedings</li>
+                <li><strong>Metadata Preservation:</strong> Structured JSON files provide court-admissible documentation</li>
+                <li><strong>Content Authentication:</strong> Verifiable link to archived source for evidence validation</li>
+                <li><strong>Discovery Compliance:</strong> Comprehensive metadata supports legal discovery requirements</li>
+            </ul>
+        </div>
+        
+        <h3>Professional Documentation Features</h3>
+        <p>For Archive.org videos and videos with enhanced metadata, the application provides professional documentation tools:</p>
+        
+        <h4>Evidence Report Generation</h4>
+        <div class="warning">
+            <p><strong>For Legal Professionals:</strong> Generate court-admissible evidence reports with complete chain of custody documentation.</p>
+            <ol>
+                <li>Select a video and click "Show Details"</li>
+                <li>Click the "Evidence Report" button</li>
+                <li>Fill in case information (case number, title, attorney, court)</li>
+                <li>Click "Generate Report" to create comprehensive documentation</li>
+            </ol>
+            
+            <p><strong>Generated reports include:</strong></p>
+            <ul>
+                <li>Unique evidence ID and timestamps</li>
+                <li>Complete file integrity verification (MD5, SHA1, SHA256 hashes)</li>
+                <li>Full chain of custody from original publication to collection</li>
+                <li>Technical details and source verification</li>
+                <li>Legal certifications and authenticity statements</li>
+                <li>Both structured JSON and human-readable summary formats</li>
+            </ul>
+        </div>
+        
+        <h4>Academic Citation Generation</h4>
+        <div class="tip">
+            <p><strong>For Researchers & Journalists:</strong> Generate properly formatted citations in multiple academic styles.</p>
+            <ol>
+                <li>Select a video and click "Show Details"</li>
+                <li>Click the "Generate Citations" button</li>
+                <li>Optionally customize title, author, date, or add research notes</li>
+                <li>Click "Generate Citations" to create formatted citations</li>
+            </ol>
+            
+            <p><strong>Generated citation formats include:</strong></p>
+            <ul>
+                <li><strong>APA (7th Edition):</strong> For psychology, education, and social sciences</li>
+                <li><strong>MLA (9th Edition):</strong> For literature, arts, and humanities</li>
+                <li><strong>Chicago (17th Edition):</strong> For history and literature</li>
+                <li><strong>Harvard:</strong> For various academic disciplines</li>
+                <li><strong>IEEE:</strong> For engineering and computer science</li>
+                <li><strong>Vancouver:</strong> For medical and scientific research</li>
+                <li><strong>BibTeX:</strong> For LaTeX document preparation</li>
+            </ul>
+        </div>
 
         <h3>Playback Control Options</h3>
         
@@ -237,140 +456,346 @@
             </div>
             <span><strong>Next:</strong> Skip to the next video in the playlist</span>
         </div>
-        
-        <div class="note">
-            <p>When Continuous Play is enabled, the player will automatically move to the next video in the playlist when the current video finishes playing. After the last video, it will loop back to the first video in the playlist.</p>
-            <p>The Loop option takes precedence over Continuous Play. If Loop is enabled, the current video will repeat regardless of Continuous Play setting.</p>
-        </div>
 
         <h3>Managing the Playlist</h3>
         <ul>
             <li>Videos are automatically added to the playlist when downloaded</li>
             <li>Videos are automatically sorted alphabetically by title</li>
-            <li>Use the tabs (All Videos, YouTube, Twitter/X) to filter the playlist</li>
+            <li>Use the tabs (All Videos, YouTube, Twitter/X, Archive.org) to filter the playlist</li>
             <li>Click on any video in the playlist to play it</li>
             <li>The currently playing video is highlighted in the playlist</li>
             <li>Click the "Source" button to open the original video in your browser</li>
             <li>Click the "Remove" button to delete a video from both playlist and cache</li>
         </ul>
-        
-        <div class="tip">
-            <strong>Tip:</strong> The "Source" button is particularly useful for sharing links to the original content with others or for visiting the original page to see comments or related videos.
-        </div>
     </div>
 
     <div class="section">
         <h2>Supported Platforms</h2>
         <ul>
-            <li><strong>YouTube:</strong> Videos from youtube.com and youtu.be</li>
-            <li><strong>Twitter/X:</strong> Videos from twitter.com and x.com</li>
-            <li><strong>Other platforms:</strong> The application supports many other video platforms</li>
+            <li><strong>YouTube:</strong> Videos from youtube.com and youtu.be (full format support)</li>
+            <li><strong>Twitter/X:</strong> Videos from twitter.com and x.com (specialized extraction)</li>
+            <li><strong>Archive.org:</strong> Videos from archive.org (Internet Archive) with metadata support</li>
+            <li><strong>Other platforms:</strong> Many other video platforms supported through yt-dlp</li>
+        </ul>
+        
+        <h3>Archive.org Support Details</h3>
+        <div class="quality-info">
+            <p>Archive.org (Internet Archive) support includes:</p>
+            <ul>
+                <li><strong>Direct API access:</strong> Uses Archive.org's metadata API for accurate information</li>
+                <li><strong>Format preference:</strong> Automatically selects the best available video format (MP4 preferred)</li>
+                <li><strong>Enhanced metadata extraction:</strong> Captures comprehensive metadata including original platform information</li>
+                <li><strong>Multiple formats:</strong> Supports MP4, WebM, and AVI video files</li>
+                <li><strong>Large file handling:</strong> Optimized for downloading large archive files with progress tracking</li>
+                <li><strong>YouTube restoration:</strong> For archived YouTube videos, extracts original video IDs and URLs</li>
+                <li><strong>Provenance tracking:</strong> Full chain of custody from original source to archive</li>
+            </ul>
+        </div>
+        
+        <h3>Professional Use Cases</h3>
+        
+        <div class="new-feature">
+            <h4>For Journalists</h4>
+            <ul>
+                <li><strong>Source Verification:</strong> Access original publication dates, creators, and platform information for fact-checking</li>
+                <li><strong>Evidence Preservation:</strong> Download videos that might be deleted or modified, maintaining metadata chain of custody</li>
+                <li><strong>Historical Context:</strong> Compare archive dates vs. original publication dates to track content lifecycle</li>
+                <li><strong>Quote Attribution:</strong> Accurate creator and date information for proper citation in articles</li>
+                <li><strong>Dead Link Recovery:</strong> Access content from deleted YouTube channels or removed videos via Archive.org</li>
+                <li><strong>Timeline Reconstruction:</strong> Use archive dates to establish when content was preserved vs. when it was originally published</li>
+            </ul>
+        </div>
+        
+        <div class="tip">
+            <h4>For Legal Professionals</h4>
+            <ul>
+                <li><strong>Evidence Authentication:</strong> Comprehensive metadata provides digital forensics trail for court proceedings</li>
+                <li><strong>Chain of Custody:</strong> Full provenance tracking from original platform through Archive.org to local storage</li>
+                <li><strong>Timestamp Verification:</strong> Multiple date fields (original, archived, downloaded) for temporal evidence</li>
+                <li><strong>Content Integrity:</strong> MD5/SHA1 checksums verify file authenticity against Archive.org originals</li>
+                <li><strong>Discovery Preservation:</strong> Secure local copies of potential evidence before it disappears</li>
+                <li><strong>Cross-Platform Verification:</strong> Original YouTube URLs allow verification against live content when available</li>
+                <li><strong>Metadata Documentation:</strong> Structured JSON metadata files provide court-admissible documentation</li>
+            </ul>
+        </div>
+        
+        <div class="quality-info">
+            <h4>Research Value Examples</h4>
+            <ul>
+                <li><strong>Academic Research:</strong> Study content evolution, platform migrations, and digital preservation</li>
+                <li><strong>Media Analysis:</strong> Analyze how content spreads across platforms and time periods</li>
+                <li><strong>Historical Documentation:</strong> Preserve and study content from specific time periods or events</li>
+                <li><strong>Content Creator Studies:</strong> Track how creators' content was preserved and archived</li>
+                <li><strong>Platform Policy Research:</strong> Study what content was removed and when, using archive vs. original dates</li>
+            </ul>
+        </div>
+        
+        <h3>Supported Archive.org URL Formats</h3>
+        <ul>
+            <li><code>https://archive.org/details/VideoName</code> - Standard details page</li>
+            <li><code>https://archive.org/embed/VideoName</code> - Embed player page</li>
         </ul>
         
         <div class="note">
-            <p>The application automatically detects the source platform and uses the appropriate download method. Twitter/X videos use specialized extraction methods to ensure compatibility.</p>
+            <p>The application automatically detects the source platform and uses the appropriate download method. Archive.org videos use direct API access to find the best quality video files available for each item.</p>
         </div>
     </div>
 
     <div class="section">
-        <h2>Cache Location</h2>
+        <h2>Troubleshooting Common Issues</h2>
+        
+        <h3>YouTube Signature Extraction Failures</h3>
+        <div class="warning">
+            <strong>Symptoms:</strong> "nsig extraction failed" or "Requested format is not available" errors
+        </div>
+        <p><strong>Solutions:</strong></p>
+        <ol>
+            <li><strong>Switch to RELIABLE quality</strong> - This uses format 18 which bypasses signature issues</li>
+            <li><strong>Update yt-dlp:</strong> <code>pip install --upgrade yt-dlp</code></li>
+            <li><strong>Check logs</strong> for detailed error information</li>
+        </ol>
+
+        <h3>Download Failures</h3>
+        <ul>
+            <li><strong>Check your internet connection</strong> and verify the URL is from a supported platform</li>
+            <li><strong>Try different quality settings</strong> - Start with RELIABLE and work up</li>
+            <li><strong>Update yt-dlp regularly</strong> as platforms frequently change their systems</li>
+            <li><strong>Check if FFmpeg is required</strong> for your desired quality level</li>
+            <li><strong>For Archive.org:</strong> Verify the item exists and contains video files</li>
+            <li><strong>For large Archive.org files:</strong> Ensure stable internet connection for complete downloads</li>
+        </ul>
+
+        <h3>Video Playback Issues</h3>
+        <ul>
+            <li><strong>Ensure the video file wasn't moved</strong> or deleted from the cache directory</li>
+            <li><strong>Check file permissions</strong> in the cache directory</li>
+            <li><strong>Try re-downloading</strong> the video with a different quality setting</li>
+        </ul>
+
+        <h3>Application Startup Problems</h3>
+        <ul>
+            <li><strong>Make sure port 8000 is available</strong> and not used by other applications</li>
+            <li><strong>Verify Python installation</strong> and required dependencies</li>
+            <li><strong>Check the logs directory</strong> for startup error messages</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>Cache Location and File Management</h2>
         <p>Videos are stored in your Downloads folder:</p>
         <ul>
             <li>Windows: <code>%USERPROFILE%\Downloads\mucache\data</code></li>
             <li>Linux/macOS: <code>~/Downloads/mucache/data</code></li>
         </ul>
+        
+        <h3>File Structure and Professional Documentation</h3>
+        <ul>
+            <li><strong>Video files:</strong> Stored directly in the data directory</li>
+            <li><strong>playlist.json:</strong> Contains playlist information and metadata</li>
+            <li><strong>settings.json:</strong> Stores your quality preferences</li>
+            <li><strong>.metadata.json files:</strong> Enhanced metadata for each video (Archive.org videos)</li>
+            <li><strong>evidence_reports/:</strong> Court-admissible evidence documentation</li>
+            <li><strong>citations/:</strong> Academic citation files in multiple formats</li>
+            <li><strong>logs/:</strong> Directory containing application logs</li>
+        </ul>
+        
+        <div class="tip">
+            <strong>Professional Backup Considerations:</strong>
+            <ul>
+                <li>Include <code>.metadata.json</code> files in backups for complete documentation</li>
+                <li>Back up <code>evidence_reports/</code> directory for legal compliance</li>
+                <li>Include <code>citations/</code> directory for research continuity</li>
+                <li>Evidence reports contain unique IDs for cross-referencing</li>
+            </ul>
+        </div>
     </div>
     
     <div class="section">
-        <h2>Log Files</h2>
+        <h2>Log Files and Debugging</h2>
         <p>The application maintains detailed logs in the <code>mucache/data/logs</code> directory:</p>
         
         <table class="logs-table">
             <tr>
                 <th>Log File</th>
                 <th>Description</th>
-            </tr>
-            <tr>
-                <td><code>access.log</code></td>
-                <td>Records all normal operations and information messages</td>
-            </tr>
-            <tr>
-                <td><code>error.log</code></td>
-                <td>Records errors and exceptions that occur during operation</td>
+                <th>Use Case</th>
             </tr>
             <tr>
                 <td><code>app.log</code></td>
-                <td>Comprehensive log containing both normal operations and errors</td>
+                <td>Comprehensive log containing all operations and errors</td>
+                <td>Primary troubleshooting resource</td>
+            </tr>
+            <tr>
+                <td>Console output</td>
+                <td>Real-time application status and error messages</td>
+                <td>Immediate feedback during operation</td>
             </tr>
         </table>
         
         <div class="tip">
-            <strong>Troubleshooting Tip:</strong> If you encounter issues with the application, check the log files for details about what went wrong. These logs are especially useful for diagnosing download problems or connection issues.
+            <strong>Debugging Tips:</strong>
+            <ul>
+                <li>Check <code>app.log</code> for detailed error information when downloads fail</li>
+                <li>Look for "format" messages to understand what download strategies were attempted</li>
+                <li>Monitor FFmpeg status messages if using HIGH quality</li>
+                <li>Quality preference changes are logged for troubleshooting</li>
+            </ul>
         </div>
     </div>
 
     <div class="section">
-        <h2>Automatic Shutdown</h2>
-        <p>The application includes automatic shutdown features:</p>
-        <ul>
-            <li>Closes automatically when you close the browser window</li>
-            <li>Handles Ctrl+C shutdown gracefully</li>
-            <li>Cleans up resources on exit</li>
-        </ul>
+        <h2>Professional Workflows</h2>
+        
+        <h3>Journalism & Media Research</h3>
+        <div class="new-feature">
+            <h4>Fact-Checking Workflow</h4>
+            <ol>
+                <li><strong>Source Discovery:</strong> Find archived versions of potentially deleted or modified content</li>
+                <li><strong>Metadata Verification:</strong> Check publication dates, creators, and original platform information</li>
+                <li><strong>Content Preservation:</strong> Download videos before they can be removed or altered</li>
+                <li><strong>Citation Preparation:</strong> Use enhanced metadata for accurate source attribution</li>
+                <li><strong>Timeline Analysis:</strong> Compare original publication vs. archive dates to understand content lifecycle</li>
+            </ol>
+            
+            <p><strong>Example Use Case:</strong> A journalist investigating a claim needs to verify when a specific statement was made. Using Archive.org support, they can:</p>
+            <ul>
+                <li>Download the archived video with original publication date</li>
+                <li>Verify the original YouTube channel and creator information</li>
+                <li>Document when the content was archived vs. originally published</li>
+                <li>Preserve the content locally in case the archive becomes unavailable</li>
+            </ul>
+        </div>
+        
+        <h3>Legal & Compliance</h3>
+        <div class="tip">
+            <h4>Evidence Collection Workflow</h4>
+            <ol>
+                <li><strong>Content Discovery:</strong> Locate relevant archived video content</li>
+                <li><strong>Provenance Documentation:</strong> Capture complete metadata chain from original to archive</li>
+                <li><strong>Integrity Verification:</strong> Verify file checksums against Archive.org originals</li>
+                <li><strong>Local Preservation:</strong> Secure download with timestamp documentation</li>
+                <li><strong>Metadata Export:</strong> Generate court-admissible documentation from JSON metadata files</li>
+            </ol>
+            
+            <p><strong>Example Use Case:</strong> A legal team needs to preserve video evidence that might be challenged or removed:</p>
+            <ul>
+                <li>Download video with complete provenance tracking</li>
+                <li>Document original platform, publication date, and archive date</li>
+                <li>Verify file integrity using MD5/SHA1 checksums</li>
+                <li>Maintain structured metadata for discovery requests</li>
+                <li>Establish chain of custody from original platform through Archive.org to legal files</li>
+            </ul>
+        </div>
+        
+        <h3>Academic & Historical Research</h3>
+        <div class="quality-info">
+            <h4>Research Documentation Workflow</h4>
+            <ol>
+                <li><strong>Content Collection:</strong> Gather archived videos by topic, creator, or time period</li>
+                <li><strong>Metadata Analysis:</strong> Analyze publication patterns, content evolution, and platform changes</li>
+                <li><strong>Temporal Mapping:</strong> Create timelines using original vs. archive dates</li>
+                <li><strong>Cross-Platform Studies:</strong> Compare archived content with current platform versions</li>
+                <li><strong>Citation Management:</strong> Use comprehensive metadata for academic citation standards</li>
+            </ol>
+            
+            <p><strong>Example Use Case:</strong> A researcher studying digital content preservation can:</p>
+            <ul>
+                <li>Track how content migrated from YouTube to Archive.org</li>
+                <li>Analyze what types of content were prioritized for preservation</li>
+                <li>Study content creator responses to platform policy changes</li>
+                <li>Document the gap between original publication and archival preservation</li>
+            </ul>
+        </div>
     </div>
-
+        
     <div class="section">
-        <h2>Troubleshooting</h2>
-        <h3>Common Issues</h3>
+        <h2>Performance and Optimization</h2>
+        
+        <h3>Quality vs. Performance Trade-offs</h3>
         <ul>
-            <li><strong>Download fails:</strong> Check your internet connection and verify the URL is from a supported platform</li>
-            <li><strong>Twitter/X videos fail:</strong> Some Twitter/X videos may require multiple attempts or may not be downloadable</li>
-            <li><strong>Video won't play:</strong> Ensure the video file wasn't moved or deleted from the cache directory</li>
-            <li><strong>Application won't start:</strong> Make sure port 8000 is available and you have Python installed</li>
-            <li><strong>Application doesn't close:</strong> Close the browser window or use Ctrl+C in the terminal</li>
-            <li><strong>Connection errors:</strong> These are normal when streaming large files and are handled automatically</li>
+            <li><strong>RELIABLE:</strong> Fastest downloads, smallest files, always works</li>
+            <li><strong>MEDIUM:</strong> Balanced approach with good compatibility</li>
+            <li><strong>HIGH:</strong> Best quality but requires more processing time and storage</li>
         </ul>
 
-        <h3>Error Messages</h3>
+        <h3>Storage Considerations</h3>
         <ul>
-            <li><strong>"Error processing video":</strong> The URL may be invalid or the video is not available</li>
-            <li><strong>"Port in use":</strong> Another application is using port 8000. Close other applications and try again</li>
-            <li><strong>"File not found":</strong> The requested video file is missing from the cache directory</li>
+            <li><strong>360p videos:</strong> Typically 50-150 MB for 10-minute videos</li>
+            <li><strong>720p videos:</strong> Typically 200-500 MB for 10-minute videos</li>
+            <li><strong>1080p videos:</strong> Typically 500-1000 MB for 10-minute videos</li>
+            <li><strong>Archive.org videos:</strong> Often larger due to preservation quality (500MB-2GB+)</li>
         </ul>
         
-        <h3>Using Log Files for Troubleshooting</h3>
-        <p>When encountering issues:</p>
-        <ol>
-            <li>Check the <code>error.log</code> file in the logs directory first</li>
-            <li>For more context, review the <code>app.log</code> file to see the sequence of events</li>
-            <li>Check timestamps to correlate events with when you experienced the issue</li>
-        </ol>
+        <h3>Metadata Storage</h3>
+        <ul>
+            <li><strong>Enhanced metadata files:</strong> Small JSON files (~5-50KB) stored alongside videos</li>
+            <li><strong>Professional workflows:</strong> Metadata files support legal and research documentation needs</li>
+            <li><strong>Backup considerations:</strong> Include both video files and .metadata.json files in backups</li>
+        </ul>
     </div>
 
     <div class="section">
-        <h2>Technical Notes</h2>
+        <h2>Advanced Usage</h2>
+        
+        <h3>Custom Format Selection</h3>
+        <p>The application uses intelligent format selection based on your quality preference:</p>
         <ul>
-            <li>The application runs a local web server on port 8000</li>
-            <li>Videos are stored in MP4 format</li>
-            <li>Playlist data is stored in a JSON file in the cache directory</li>
-            <li>Twitter/X videos use specialized extraction methods</li>
-            <li>File metadata is available via API</li>
-            <li>The application uses HTML5 video playback capabilities</li>
-            <li>React is used for the UI with Tailwind CSS for styling</li>
-            <li>Uses a heartbeat mechanism to detect browser window closure</li>
-            <li>Implements a threaded server for better performance</li>
-            <li>Files are streamed in chunks to handle large videos efficiently</li>
-            <li>Connection errors are gracefully handled to prevent application crashes</li>
-            <li>Comprehensive logging system captures all application events</li>
+            <li><strong>RELIABLE:</strong> Prioritizes format 18 and other pre-combined formats</li>
+            <li><strong>MEDIUM:</strong> Attempts higher quality with graceful fallbacks</li>
+            <li><strong>HIGH:</strong> Downloads separate streams and merges with FFmpeg</li>
         </ul>
+
+        <h3>Network Considerations</h3>
+        <ul>
+            <li>The application runs a local server on port 8000</li>
+            <li>No external network access required after initial download</li>
+            <li>Downloads are chunked for better reliability</li>
+            <li>Connection errors are handled gracefully</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>Technical Details</h2>
+        <ul>
+            <li>Built with Python backend and React frontend</li>
+            <li>Uses yt-dlp for video downloads with intelligent format selection</li>
+            <li>Optional FFmpeg integration for high-quality video processing</li>
+            <li>Archive.org API integration for metadata extraction</li>
+            <li><strong>Evidence generation system with cryptographic verification</strong></li>
+            <li><strong>Multi-format academic citation generator</strong></li>
+            <li>Threaded server architecture for responsive performance</li>
+            <li>JSON-based playlist and settings storage</li>
+            <li>UTF-8 character encoding support</li>
+            <li>Cross-platform compatibility (Windows, macOS, Linux)</li>
+            <li>Automatic shutdown detection and cleanup</li>
+            <li>Comprehensive error handling and recovery</li>
+            <li><strong>Professional-grade documentation and provenance tracking</strong></li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>Updates and Maintenance</h2>
+        
+        <h3>Keeping yt-dlp Updated</h3>
+        <p>Regularly update yt-dlp to ensure compatibility with platform changes:</p>
+        <div class="control-example">
+            <code>pip install --upgrade yt-dlp</code>
+        </div>
+
+        <h3>Checking for Application Updates</h3>
+        <p>Monitor the application logs for version information and compatibility notices. The application logs the yt-dlp version on startup for reference.</p>
     </div>
 
     <div class="legal-footer">
         <strong>Legal Notice:</strong> Users of this software are solely responsible for ensuring they have appropriate rights and permissions for any content they download, modify, or redistribute. The software is provided "as is", and the providers of this software assume no liability for any damages arising from its use or misuse. Users must comply with all applicable laws and platform terms of service in their jurisdiction.
+        
+        <br><br>
+        
+        <strong>Privacy Notice:</strong> This application processes data locally on your device. No personal data is transmitted to external servers except for the video downloads you explicitly request. Settings and playlist information are stored locally as required for functionality under GDPR Article 6(1)(f) - legitimate interest for software operation.
     </div>
 
     <script>
-        // Simple script to make the toggle switches in the documentation interactive
+        // Interactive elements for the documentation
         document.addEventListener('DOMContentLoaded', function() {
             const toggleSwitches = document.querySelectorAll('.toggle-switch');
             toggleSwitches.forEach(toggle => {
