@@ -1,2 +1,56 @@
-# Exclude the data directory
+# Cache and data directories
 data/
+data_encrypted/
+webpages/
+citations/
+
+# Log files and directories
+logs/
+*.log
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+
+# Downloaded content (should not be committed)
+*.mp4
+*.webm
+*.mkv
+*.avi
+*.mov
+*.mhtml
+
+# Settings and user data
+settings.json
+quality_settings.json
+
+# Email logs (may contain sensitive info)
+emails/

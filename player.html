@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -15,11 +15,6 @@
         .transform.translate-x-4 {transform:translateX(1rem)}
         .transition-transform {transition-property:transform;transition-timing-function:cubic-bezier(0.4,0,0.2,1);
         transition-duration:150ms}
-        .tab-active {
-            border-bottom: 2px solid #3B82F6;
-            color: #3B82F6;
-            font-weight: 600;
-        }
         .info-table {
             border-collapse: separate;
             border-spacing: 10px 5px;
@@ -72,9 +67,31 @@
             const [isContinuous, setIsContinuous] = React.useState(false);
             const [status, setStatus] = React.useState('');
             const [url, setUrl] = React.useState('');
-            const [activeTab, setActiveTab] = React.useState('all');
+            const [filterSource, setFilterSource] = React.useState('all');
+            const [webpages, setWebpages] = React.useState([]);
+            const [currentView, setCurrentView] = React.useState('videos'); // 'videos', 'webpages', or 'search'
+            const [searchQuery, setSearchQuery] = React.useState('');
+            const [sortOption, setSortOption] = React.useState('date_desc');
+            const [encryptionPassword, setEncryptionPassword] = React.useState('');
             const [showDetails, setShowDetails] = React.useState(false);
             const [showSettings, setShowSettings] = React.useState(false);
+            const [showDebugPanel, setShowDebugPanel] = React.useState(false);
+            const [debugActiveTab, setDebugActiveTab] = React.useState('videos'); // 'videos' or 'articles'
+            const [debugCommand, setDebugCommand] = React.useState('--simulate');
+            const [debugUrl, setDebugUrl] = React.useState('');
+            const [debugOutput, setDebugOutput] = React.useState('');
+            const [debugLoading, setDebugLoading] = React.useState(false);
+            const [articleDebugCommand, setArticleDebugCommand] = React.useState('simulate-archive');
+            const [articleDebugUrl, setArticleDebugUrl] = React.useState('');
+            const [articleDebugOutput, setArticleDebugOutput] = React.useState('');
+            const [articleDebugLoading, setArticleDebugLoading] = React.useState(false);
+            const [showEmailForm, setShowEmailForm] = React.useState(false);
+            const [emailData, setEmailData] = React.useState({
+                userName: '',
+                userEmail: '',
+                description: ''
+            });
+            const [emailSending, setEmailSending] = React.useState(false);
             const [showEvidenceModal, setShowEvidenceModal] = React.useState(false);
             const [showCitationModal, setShowCitationModal] = React.useState(false);
             const [evidenceData, setEvidenceData] = React.useState({
@@ -169,17 +186,33 @@
                         clearInterval(heartbeatInterval);
                     }
                 }, 5000);
-                
+
+                // Periodic refresh for playlists
+                const refreshInterval = setInterval(() => {
+                    loadPlaylist();
+                    loadWebpages();
+                }, 10000);
+
+                const sendShutdownRequest = async () => {
+                    try {
+                        await fetch('/shutdown', { method: 'POST' });
+                    } catch (error) {
+                        console.log('Error sending shutdown request:', error);
+                    }
+                };
+
                 window.addEventListener('beforeunload', sendShutdownRequest);
                 
                 return () => {
                     clearInterval(heartbeatInterval);
+                    clearInterval(refreshInterval);
                     window.removeEventListener('beforeunload', sendShutdownRequest);
                 };
             }, []);
             
-            React.useEffect(() => { 
-                loadPlaylist(); 
+            React.useEffect(() => {
+                loadPlaylist();
+                loadWebpages();
                 loadQualitySettings();
             }, []);
             
@@ -204,7 +237,17 @@
                     setVideos(enhancedData);
                 } catch (error) { console.error('Error loading playlist:', error); }
             };
-            
+
+            const loadWebpages = async () => {
+                try {
+                    const response = await fetch('/webpages');
+                    const data = await response.json();
+                    setWebpages(data);
+                } catch (error) {
+                    console.error('Error loading webpages:', error);
+                }
+            };
+
             const downloadVideo = async () => {
                 if (!url) return;
                 setStatus('Processing...');
@@ -282,7 +325,51 @@
                     console.error('Error removing video:', error);
                 }
             };
-            
+
+            const downloadWebpage = async () => {
+                if (!url) return;
+                setStatus('Archiving webpage...');
+
+                try {
+                    const response = await fetch('/download_webpage', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ url })
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        setStatus('Webpage archiving started');
+                        setUrl('');
+
+                        // Reload webpages after a delay to show the new item
+                        setTimeout(() => {
+                            loadWebpages();
+                        }, 2000);
+                    } else {
+                        setStatus('Error archiving webpage');
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    setStatus('Error archiving webpage');
+                }
+            };
+
+            const removeWebpage = async (url, e) => {
+                e.stopPropagation();
+
+                try {
+                    const response = await fetch(`/remove_webpage?url=${encodeURIComponent(url)}`, { method: 'POST' });
+                    if (response.ok) {
+                        await loadWebpages();
+                    }
+                } catch (error) {
+                    console.error('Error removing webpage:', error);
+                }
+            };
+
             const handleVideoEnd = () => {
                 if (isLooping) {
                     if (videoRef.current) { videoRef.current.currentTime = 0; videoRef.current.play(); }
@@ -305,13 +392,26 @@
             }, [currentIndex]);
             
             const getVideoSource = (video) => {
-                const { url, filename } = video;
+                const { url, filename, platform } = video;
+
+                // Use platform field if available (new format)
+                if (platform) {
+                    return platform;
+                }
+
+                // Fallback to URL-based detection (legacy format)
                 if (url.includes('youtube.com') || url.includes('youtu.be')) {
                     return 'YouTube';
                 } else if (url.includes('twitter.com') || url.includes('x.com') || filename.startsWith('X_Video_')) {
                     return 'Twitter/X';
                 } else if (url.includes('archive.org')) {
                     return 'Archive.org';
+                } else if (url.includes('reddit.com') || url.includes('redd.it') || filename.startsWith('Reddit_')) {
+                    return 'Reddit';
+                } else if (url.includes('cnn.com') || filename.startsWith('CNN_')) {
+                    return 'CNN';
+                } else if (url.includes('c-span.org') || filename.startsWith('CSPAN_')) {
+                    return 'C-SPAN';
                 } else {
                     try {
                         const domain = new URL(url).hostname;
@@ -340,20 +440,128 @@
                 }
             };
             
+            // Search function
+            const performSearch = (query, videos, webpages) => {
+                if (!query.trim()) return [];
+
+                const searchTerm = query.toLowerCase();
+                const results = [];
+
+                // Search videos
+                videos.forEach(video => {
+                    if (
+                        video.title.toLowerCase().includes(searchTerm) ||
+                        video.filename.toLowerCase().includes(searchTerm) ||
+                        (video.platform && video.platform.toLowerCase().includes(searchTerm)) ||
+                        video.url.toLowerCase().includes(searchTerm)
+                    ) {
+                        results.push({ ...video, type: 'video' });
+                    }
+                });
+
+                // Search webpages
+                webpages.forEach(webpage => {
+                    if (
+                        webpage.title.toLowerCase().includes(searchTerm) ||
+                        webpage.filename.toLowerCase().includes(searchTerm) ||
+                        (webpage.domain && webpage.domain.toLowerCase().includes(searchTerm)) ||
+                        webpage.url.toLowerCase().includes(searchTerm)
+                    ) {
+                        results.push({ ...webpage, type: 'webpage', platform: webpage.domain });
+                    }
+                });
+
+                return results;
+            };
+
+            // Sorting function
+            const sortItems = (items, sortOption) => {
+                const sorted = [...items];
+
+                switch (sortOption) {
+                    case 'date_desc':
+                        return sorted.sort((a, b) => new Date(b.saved_date || 0) - new Date(a.saved_date || 0));
+                    case 'date_asc':
+                        return sorted.sort((a, b) => new Date(a.saved_date || 0) - new Date(b.saved_date || 0));
+                    case 'title_asc':
+                        return sorted.sort((a, b) => a.title.localeCompare(b.title));
+                    case 'title_desc':
+                        return sorted.sort((a, b) => b.title.localeCompare(a.title));
+                    case 'platform_asc':
+                        return sorted.sort((a, b) => (a.platform || '').localeCompare(b.platform || ''));
+                    case 'size_asc':
+                        return sorted.sort((a, b) => (a.stats?.size || a.filesize || 0) - (b.stats?.size || b.filesize || 0));
+                    case 'size_desc':
+                        return sorted.sort((a, b) => (b.stats?.size || b.filesize || 0) - (a.stats?.size || a.filesize || 0));
+                    default:
+                        return sorted;
+                }
+            };
+
+            // Search results
+            const searchResults = React.useMemo(() => {
+                if (!searchQuery.trim()) return [];
+                const results = performSearch(searchQuery, videos, webpages);
+                return sortItems(results, sortOption);
+            }, [searchQuery, videos, webpages, sortOption]);
+
             const filteredVideos = React.useMemo(() => {
-                if (activeTab === 'all') return videos;
-                if (activeTab === 'youtube') {
-                    return videos.filter(v => v.url.includes('youtube.com') || v.url.includes('youtu.be'));
+                let filtered = videos;
+
+                if (filterSource !== 'all') {
+                    if (filterSource === 'youtube') {
+                        filtered = videos.filter(v =>
+                            v.platform === 'YouTube' ||
+                            v.url.includes('youtube.com') ||
+                            v.url.includes('youtu.be')
+                        );
+                    } else if (filterSource === 'twitter') {
+                        filtered = videos.filter(v =>
+                            v.platform === 'Twitter' ||
+                            v.url.includes('twitter.com') ||
+                            v.url.includes('x.com') ||
+                            v.filename.startsWith('X_Video_')
+                        );
+                    } else if (filterSource === 'archive') {
+                        filtered = videos.filter(v =>
+                            v.platform === 'Archive.org' ||
+                            v.url.includes('archive.org')
+                        );
+                    } else if (filterSource === 'reddit') {
+                        filtered = videos.filter(v =>
+                            v.platform === 'Reddit' ||
+                            v.url.includes('reddit.com') ||
+                            v.url.includes('redd.it') ||
+                            v.filename.startsWith('Reddit_')
+                        );
+                    } else if (filterSource === 'cnn') {
+                        filtered = videos.filter(v =>
+                            v.platform === 'CNN' ||
+                            v.url.includes('cnn.com') ||
+                            v.filename.startsWith('CNN_')
+                        );
+                    } else if (filterSource === 'cspan') {
+                        filtered = videos.filter(v =>
+                            v.platform === 'CSPAN' ||
+                            v.url.includes('c-span.org') ||
+                            v.filename.startsWith('CSPAN_')
+                        );
+                    } else if (filterSource === 'generic') {
+                        filtered = videos.filter(v =>
+                            v.platform &&
+                            !['YouTube', 'Twitter', 'Archive.org', 'Reddit', 'CNN', 'CSPAN'].includes(v.platform)
+                        );
+                    }
                 }
-                if (activeTab === 'twitter') {
-                    return videos.filter(v => v.url.includes('twitter.com') || v.url.includes('x.com') || v.filename.startsWith('X_Video_'));
-                }
-                if (activeTab === 'archive') {
-                    return videos.filter(v => v.url.includes('archive.org'));
-                }
-                return videos;
-            }, [videos, activeTab]);
-            
+
+                return sortItems(filtered, sortOption);
+            }, [videos, filterSource, sortOption]);
+
+            // Sorted webpages
+            const sortedWebpages = React.useMemo(() => {
+                return sortItems(webpages, sortOption);
+            }, [webpages, sortOption]);
+
             const toggleDetails = (e) => {
                 e.preventDefault();
                 setShowDetails(!showDetails);
@@ -363,7 +571,171 @@
                 e.preventDefault();
                 setShowSettings(!showSettings);
             };
-            
+
+            const executeDebugCommand = async () => {
+                if (!debugUrl.trim()) {
+                    setDebugOutput('Error: Please enter a URL to test');
+                    return;
+                }
+
+                setDebugLoading(true);
+                setDebugOutput('Testing video...');
+
+                try {
+                    const response = await fetch('/debug_ytdlp', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            command: debugCommand,
+                            url: debugUrl.trim()
+                        })
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        let output = `✅ Video test completed successfully!\n`;
+                        output += `📝 Logged to: ${result.logged_to}\n`;
+                        output += `🔧 Command: ${result.command_executed}\n`;
+                        output += `🔗 URL: ${result.url_tested}\n\n`;
+
+                        if (result.output) {
+                            output += `📄 Output:\n${result.output}\n\n`;
+                        }
+
+                        if (result.errors) {
+                            output += `⚠️ Warnings/Errors:\n${result.errors}`;
+                        }
+
+                        setDebugOutput(output);
+                    } else {
+                        setDebugOutput(`❌ Error: ${result.error}\n\n📝 Logged to: ${result.logged_to || 'app.log'}`);
+                    }
+                } catch (error) {
+                    setDebugOutput(`❌ Network error: ${error.message}`);
+                }
+
+                setDebugLoading(false);
+            };
+
+            const executeArticleDebugCommand = async () => {
+                if (!articleDebugUrl.trim()) {
+                    setArticleDebugOutput('Error: Please enter a URL to test');
+                    return;
+                }
+
+                setArticleDebugLoading(true);
+                setArticleDebugOutput('Testing webpage archiving...');
+
+                try {
+                    const response = await fetch('/debug_mhtml', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            command: articleDebugCommand,
+                            url: articleDebugUrl.trim()
+                        })
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        let output = `✅ Webpage test completed successfully!\n`;
+                        output += `📝 Logged to: ${result.logged_to}\n`;
+                        output += `🔧 Command: ${result.command_executed}\n`;
+                        output += `🔗 URL: ${result.url_tested}\n\n`;
+
+                        if (result.output) {
+                            output += `📄 Output:\n${result.output}\n\n`;
+                        }
+
+                        if (result.errors) {
+                            output += `⚠️ Warnings/Errors:\n${result.errors}`;
+                        }
+
+                        setArticleDebugOutput(output);
+                    } else {
+                        setArticleDebugOutput(`❌ Error: ${result.error}\n\n📝 Logged to: ${result.logged_to || 'app.log'}`);
+                    }
+                } catch (error) {
+                    setArticleDebugOutput(`❌ Network error: ${error.message}`);
+                }
+
+                setArticleDebugLoading(false);
+            };
+
+            const sendDebugEmail = async () => {
+                if (!emailData.userName.trim() || !emailData.userEmail.trim()) {
+                    const errorMsg = '\n\n❌ Please fill in your name and email before sending.';
+                    if (debugActiveTab === 'videos') {
+                        setDebugOutput(prev => prev + errorMsg);
+                    } else {
+                        setArticleDebugOutput(prev => prev + errorMsg);
+                    }
+                    return;
+                }
+
+                const currentOutput = debugActiveTab === 'videos' ? debugOutput : articleDebugOutput;
+                if (!currentOutput.trim()) {
+                    const errorMsg = '❌ Please run a test first before sending debug email.';
+                    if (debugActiveTab === 'videos') {
+                        setDebugOutput(errorMsg);
+                    } else {
+                        setArticleDebugOutput(errorMsg);
+                    }
+                    return;
+                }
+
+                setEmailSending(true);
+
+                try {
+                    const response = await fetch('/send_debug_email', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            user_name: emailData.userName.trim(),
+                            user_email: emailData.userEmail.trim(),
+                            description: emailData.description.trim(),
+                            debug_type: debugActiveTab === 'videos' ? 'video' : 'article'
+                        })
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        const successMsg = `\n\n✅ Debug email sent successfully!\n📧 Support will contact you at: ${emailData.userEmail}\n📝 Email saved to: ${result.email_file || 'logs/emails/'}`;
+                        if (debugActiveTab === 'videos') {
+                            setDebugOutput(prev => prev + successMsg);
+                        } else {
+                            setArticleDebugOutput(prev => prev + successMsg);
+                        }
+                        setShowEmailForm(false);
+                        // Reset form
+                        setEmailData({
+                            userName: '',
+                            userEmail: '',
+                            description: ''
+                        });
+                    } else {
+                        const errorMsg = `\n\n❌ Failed to send email: ${result.error}`;
+                        if (debugActiveTab === 'videos') {
+                            setDebugOutput(prev => prev + errorMsg);
+                        } else {
+                            setArticleDebugOutput(prev => prev + errorMsg);
+                        }
+                    }
+                } catch (error) {
+                    const errorMsg = `\n\n❌ Network error sending email: ${error.message}`;
+                    if (debugActiveTab === 'videos') {
+                        setDebugOutput(prev => prev + errorMsg);
+                    } else {
+                        setArticleDebugOutput(prev => prev + errorMsg);
+                    }
+                }
+
+                setEmailSending(false);
+            };
+
             const toggleEvidenceModal = (e) => {
                 e.preventDefault();
                 setShowEvidenceModal(!showEvidenceModal);
@@ -477,7 +849,14 @@
                         </div>
                         <div className="flex gap-2">
                             <button onClick={toggleSettings} className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition">
-                                Quality Settings
+                                Advanced Settings
+                            </button>
+                            <button
+                                onClick={() => setShowDebugPanel(!showDebugPanel)}
+                                className="px-4 py-2 bg-yellow-600 text-white rounded hover:bg-purple-700 transition"
+                                type="button"
+                            >
+                                Debug Panel
                             </button>
                             <button onClick={openManual} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">
                                 User Manual
@@ -488,8 +867,12 @@
                     {/* Quality Settings Panel */}
                     {showSettings && (
                         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-                            <h3 className="text-xl font-semibold mb-4">Quality Settings</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <h3 className="text-xl font-semibold mb-6">Advanced Settings</h3>
+
+                            {/* Quality Settings Section */}
+                            <div className="mb-8">
+                                <h4 className="text-lg font-semibold mb-4">Download Quality</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 {Object.entries(qualitySettings.options).map(([key, description]) => (
                                     <button
                                         key={key}
@@ -522,24 +905,389 @@
                                     </div>
                                 )}
                             </div>
-                            <button onClick={toggleSettings} className="mt-4 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition">
+                            </div>
+
+                            {/* Encryption Settings Section */}
+                            <div className="mb-8">
+                                <h4 className="text-lg font-semibold mb-4">Secure Content Storage</h4>
+                                <div className="space-y-4">
+                                    <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                        <div className="flex items-start gap-3">
+                                            <div className="text-yellow-600 mt-1">⚠️</div>
+                                            <div>
+                                                <div className="font-medium text-yellow-800">Security Notice</div>
+                                                <div className="text-sm text-yellow-700 mt-1">
+                                                    Sensitive content is stored in a separate encrypted directory. The encryption password is not stored or logged. Content will be labeled as "Sensitive" in search results.
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Encryption Password (Optional)
+                                        </label>
+                                        <input
+                                            type="password"
+                                            value={encryptionPassword}
+                                            onChange={(e) => setEncryptionPassword(e.target.value)}
+                                            placeholder="Enter password for secure content storage"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            autoComplete="new-password"
+                                        />
+                                        <div className="text-xs text-gray-500 mt-1">
+                                            When set, downloads will be stored in a separate encrypted directory. Password must be entered each session.
+                                        </div>
+                                    </div>
+
+                                    {encryptionPassword && (
+                                        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                            <div className="text-sm text-blue-800">
+                                                <strong>Secure Mode:</strong> Password set ({encryptionPassword.length} characters)
+                                            </div>
+                                            <div className="text-xs text-blue-600 mt-1">
+                                                New downloads will be stored in <code>mucache/data/secure/</code> and marked as "Sensitive" in search results.
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                                        <div className="text-sm text-gray-700">
+                                            <strong>How it works:</strong>
+                                            <ul className="list-disc list-inside mt-1 space-y-1 text-xs">
+                                                <li>Regular content: <code>mucache/data/</code> (unencrypted)</li>
+                                                <li>Sensitive content: <code>mucache/data/secure/</code> (encrypted)</li>
+                                                <li>Search results show both types, sensitive content labeled</li>
+                                                <li>No mixing of encrypted and unencrypted files</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button onClick={toggleSettings} className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition">
                                 Close Settings
                             </button>
                         </div>
                     )}
-                    
+
+                    {/* Debug Panel */}
+                    {showDebugPanel && (
+                        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                            <h3 className="text-xl font-semibold mb-4">🔧 Debug Panel</h3>
+
+                            {/* Tab Navigation */}
+                            <div className="border-b border-gray-200 mb-6">
+                                <nav className="-mb-px flex space-x-8">
+                                    <button
+                                        onClick={() => setDebugActiveTab('videos')}
+                                        className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                                            debugActiveTab === 'videos'
+                                                ? 'border-orange-500 text-orange-600'
+                                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                        }`}
+                                    >
+                                        🎥 Videos
+                                    </button>
+                                    <button
+                                        onClick={() => setDebugActiveTab('articles')}
+                                        className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                                            debugActiveTab === 'articles'
+                                                ? 'border-purple-500 text-purple-600'
+                                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                        }`}
+                                    >
+                                        📄 Articles
+                                    </button>
+                                </nav>
+                            </div>
+
+                            {/* Videos Tab */}
+                            {debugActiveTab === 'videos' && (
+                                <div>
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Command:
+                                        </label>
+                                        <select
+                                            value={debugCommand}
+                                            onChange={(e) => setDebugCommand(e.target.value)}
+                                            className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                        >
+                                            <option value="--simulate">--simulate (Dry run - test extraction without downloading)</option>
+                                            <option value="--list-formats">--list-formats (Show available video/audio formats)</option>
+                                            <option value="--get-title">--get-title (Get video title)</option>
+                                            <option value="--get-description">--get-description (Get video description)</option>
+                                            <option value="--get-duration">--get-duration (Get video duration)</option>
+                                            <option value="--get-filename">--get-filename (Get output filename)</option>
+                                            <option value="--get-url">--get-url (Get direct video URLs)</option>
+                                            <option value="--list-extractors">--list-extractors (Show supported sites)</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            URL to test:
+                                        </label>
+                                        <input
+                                            type="url"
+                                            value={debugUrl}
+                                            onChange={(e) => setDebugUrl(e.target.value)}
+                                            placeholder="https://www.cnn.com/videos/..."
+                                            className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                        />
+                                    </div>
+
+                                    <div className="mb-4">
+                                        <button
+                                            onClick={executeDebugCommand}
+                                            disabled={debugLoading}
+                                            className="px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            {debugLoading ? 'Testing...' : 'Test Video'}
+                                        </button>
+                                        <button
+                                            onClick={() => setDebugOutput('')}
+                                            className="ml-2 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition"
+                                        >
+                                            Clear Output
+                                        </button>
+                                        <button
+                                            onClick={() => setShowEmailForm(!showEmailForm)}
+                                            className="ml-2 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition"
+                                        >
+                                            📧 Email to Support
+                                        </button>
+                                    </div>
+
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Output:
+                                        </label>
+                                        <textarea
+                                            value={debugOutput}
+                                            readOnly
+                                            className="w-full h-64 p-3 border border-gray-300 rounded-md bg-gray-50 font-mono text-sm"
+                                            placeholder="Command output will appear here..."
+                                        />
+                                    </div>
+
+                                    <div className="bg-blue-50 border border-blue-200 rounded p-4 mb-4">
+                                        <h4 className="font-semibold text-blue-800 mb-2">ℹ️ Video Debug Usage:</h4>
+                                        <ul className="text-sm text-blue-700 space-y-1">
+                                            <li>• <strong>--list-formats:</strong> Most useful for troubleshooting download issues</li>
+                                            <li>• <strong>--simulate:</strong> Test if yt-dlp can extract video without downloading</li>
+                                            <li>• <strong>--get-title:</strong> Check if basic metadata extraction works</li>
+                                            <li>• All debug sessions are automatically logged to logs/debug.log (cleared each run)</li>
+                                            <li>• Use "📧 Email to Support" to send debug logs for help with problematic URLs</li>
+                                            <li>• Commands are restricted for security - only safe yt-dlp options allowed</li>
+                                        </ul>
+                                    </div>
+
+                                    <div className="bg-yellow-50 border border-yellow-200 rounded p-4">
+                                        <h4 className="font-semibold text-yellow-800 mb-2">⚠️ Video Troubleshooting Tips:</h4>
+                                        <ul className="text-sm text-yellow-700 space-y-1">
+                                            <li>• If <strong>--list-formats</strong> fails, the URL is not supported by yt-dlp</li>
+                                            <li>• CNN uses blob: URLs which yt-dlp handles automatically (don't use blob: URLs here)</li>
+                                            <li>• C-SPAN uses JWPlayer which yt-dlp supports natively</li>
+                                            <li>• Check logs/debug.log for detailed debug information (cleared each test)</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Articles Tab */}
+                            {debugActiveTab === 'articles' && (
+                                <div>
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Command:
+                                        </label>
+                                        <select
+                                            value={articleDebugCommand}
+                                            onChange={(e) => setArticleDebugCommand(e.target.value)}
+                                            className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                        >
+                                            <option value="simulate-archive">simulate-archive (Dry run - test archiving without saving)</option>
+                                            <option value="test-playwright">test-playwright (Test Playwright browser installation)</option>
+                                            <option value="test-connection">test-connection (Test webpage connectivity)</option>
+                                            <option value="test-headers">test-headers (Get webpage headers)</option>
+                                            <option value="test-content">test-content (Preview webpage content)</option>
+                                            <option value="test-mhtml">test-mhtml (Test MHTML generation)</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            URL to test:
+                                        </label>
+                                        <input
+                                            type="url"
+                                            value={articleDebugUrl}
+                                            onChange={(e) => setArticleDebugUrl(e.target.value)}
+                                            placeholder="https://www.example.com/article..."
+                                            className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                        />
+                                    </div>
+
+                                    <div className="mb-4">
+                                        <button
+                                            onClick={executeArticleDebugCommand}
+                                            disabled={articleDebugLoading}
+                                            className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            {articleDebugLoading ? 'Testing...' : 'Test Webpage'}
+                                        </button>
+                                        <button
+                                            onClick={() => setArticleDebugOutput('')}
+                                            className="ml-2 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition"
+                                        >
+                                            Clear Output
+                                        </button>
+                                        <button
+                                            onClick={() => setShowEmailForm(!showEmailForm)}
+                                            className="ml-2 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition"
+                                        >
+                                            📧 Email to Support
+                                        </button>
+                                    </div>
+
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Output:
+                                        </label>
+                                        <textarea
+                                            value={articleDebugOutput}
+                                            readOnly
+                                            className="w-full h-64 p-3 border border-gray-300 rounded-md bg-gray-50 font-mono text-sm"
+                                            placeholder="Command output will appear here..."
+                                        />
+                                    </div>
+
+                                    <div className="bg-blue-50 border border-blue-200 rounded p-4 mb-4">
+                                        <h4 className="font-semibold text-blue-800 mb-2">ℹ️ Article Debug Usage:</h4>
+                                        <ul className="text-sm text-blue-700 space-y-1">
+                                            <li>• <strong>test-playwright:</strong> Verify browser automation is working</li>
+                                            <li>• <strong>test-connection:</strong> Check if webpage is accessible</li>
+                                            <li>• <strong>test-mhtml:</strong> Test complete webpage archiving process</li>
+                                            <li>• <strong>simulate-archive:</strong> Test without actually saving files</li>
+                                            <li>• All debug sessions are automatically logged to logs/debug.log</li>
+                                        </ul>
+                                    </div>
+
+                                    <div className="bg-yellow-50 border border-yellow-200 rounded p-4">
+                                        <h4 className="font-semibold text-yellow-800 mb-2">⚠️ Article Troubleshooting Tips:</h4>
+                                        <ul className="text-sm text-yellow-700 space-y-1">
+                                            <li>• If <strong>test-playwright</strong> fails, run: playwright install chromium</li>
+                                            <li>• Some websites block automated browsers - this is normal</li>
+                                            <li>• Check if the website requires login or has CAPTCHA protection</li>
+                                            <li>• Large pages may take longer to archive completely</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Email Form (shared between tabs) */}
+                            {showEmailForm && (
+                                <div className="mb-4 p-4 border-2 border-green-200 rounded-lg bg-green-50">
+                                    <h4 className="text-lg font-semibold text-green-800 mb-3">📧 Send Debug Log to Support</h4>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Your Name *
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={emailData.userName}
+                                                onChange={(e) => setEmailData(prev => ({...prev, userName: e.target.value}))}
+                                                placeholder="John Doe"
+                                                className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                                required
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Your Email *
+                                            </label>
+                                            <input
+                                                type="email"
+                                                value={emailData.userEmail}
+                                                onChange={(e) => setEmailData(prev => ({...prev, userEmail: e.target.value}))}
+                                                placeholder="john@example.com"
+                                                className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Issue Description (Optional)
+                                        </label>
+                                        <textarea
+                                            value={emailData.description}
+                                            onChange={(e) => setEmailData(prev => ({...prev, description: e.target.value}))}
+                                            placeholder={`Describe the issue you're experiencing with this ${debugActiveTab === 'videos' ? 'video' : 'webpage'} URL...`}
+                                            className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                            rows="3"
+                                        />
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={sendDebugEmail}
+                                            disabled={emailSending || !emailData.userName.trim() || !emailData.userEmail.trim()}
+                                            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            {emailSending ? 'Sending...' : '📤 Send Debug Log'}
+                                        </button>
+                                        <button
+                                            onClick={() => setShowEmailForm(false)}
+                                            className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+
+                                    <div className="mt-3 text-sm text-green-700">
+                                        <p><strong>📧 Email will be sent to:</strong> support@example.com</p>
+                                        <p><strong>📄 Includes:</strong> Your debug test results and the debug log file</p>
+                                        <p><strong>🔒 Privacy:</strong> Only the information you provide above will be sent</p>
+                                    </div>
+                                </div>
+                            )}
+
+                            <button onClick={() => setShowDebugPanel(false)} className="mt-4 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition">
+                                Close Debug Panel
+                            </button>
+                        </div>
+                    )}
+
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="md:col-span-2">
-                            <div className="bg-white rounded-lg shadow-md p-4 mb-6">
-                                <div className="flex flex-col md:flex-row gap-4 mb-4">
+                            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                                <div className="flex flex-col sm:flex-row gap-4 mb-6">
                                     <input
-                                        type="text" className="flex-grow p-3 border rounded" placeholder="Enter video URL"
+                                        type="text" className="flex-grow p-4 border rounded-lg text-base" placeholder="Enter video URL or webpage URL"
                                         value={url} onChange={(e) => setUrl(e.target.value)}
                                         onKeyDown={(e) => e.key === 'Enter' && downloadVideo()}
                                     />
-                                    <button onClick={downloadVideo} className="px-6 py-3 bg-blue-600 text-white rounded hover:bg-blue-700 transition">
-                                        Download
-                                    </button>
+                                    <div className="flex flex-col sm:flex-row gap-3">
+                                        <button onClick={downloadVideo} className="px-8 py-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-base font-medium whitespace-nowrap">
+                                            Download Video
+                                        </button>
+                                        <button onClick={downloadWebpage} className="px-8 py-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition text-base font-medium whitespace-nowrap">
+                                            Archive Webpage
+                                        </button>
+                                        <button
+                                            onClick={() => setShowDebugPanel(!showDebugPanel)}
+                                            className="px-6 py-4 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition text-base font-medium whitespace-nowrap"
+                                            type="button"
+                                        >
+                                            Debug Panel
+                                        </button>
+                                    </div>
                                 </div>
                                 
                                 {status && (<div className="mb-4 p-2 bg-gray-100 rounded text-sm">{status}</div>)}
@@ -764,72 +1512,221 @@
                             </div>
                         </div>
                         
-                        <div className="bg-white rounded-lg shadow-md p-4 h-fit">
-                            <div className="flex border-b mb-4">
-                                <button 
-                                    onClick={() => setActiveTab('all')}
-                                    className={`px-3 py-2 text-sm ${activeTab === 'all' ? 'tab-active' : 'text-gray-600 hover:text-blue-500'}`}
-                                >
-                                    All Videos
-                                </button>
-                                <button 
-                                    onClick={() => setActiveTab('youtube')}
-                                    className={`px-3 py-2 text-sm ${activeTab === 'youtube' ? 'tab-active' : 'text-gray-600 hover:text-blue-500'}`}
-                                >
-                                    YouTube
-                                </button>
-                                <button 
-                                    onClick={() => setActiveTab('twitter')}
-                                    className={`px-3 py-2 text-sm ${activeTab === 'twitter' ? 'tab-active' : 'text-gray-600 hover:text-blue-500'}`}
-                                >
-                                    Twitter/X
-                                </button>
-                                <button 
-                                    onClick={() => setActiveTab('archive')}
-                                    className={`px-3 py-2 text-sm ${activeTab === 'archive' ? 'tab-active' : 'text-gray-600 hover:text-blue-500'}`}
-                                >
-                                    Archive.org
-                                </button>
+                        <div className="bg-white rounded-lg shadow-md p-6 h-fit">
+                            {/* Search Bar */}
+                            <div className="mb-6">
+                                <div className="flex gap-3">
+                                    <input
+                                        type="text"
+                                        value={searchQuery}
+                                        onChange={(e) => {
+                                            setSearchQuery(e.target.value);
+                                            if (e.target.value.trim()) {
+                                                setCurrentView('search');
+                                            } else {
+                                                setCurrentView('videos');
+                                            }
+                                        }}
+                                        placeholder="Search videos and webpages..."
+                                        className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-base focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                    {searchQuery && (
+                                        <button
+                                            onClick={() => {
+                                                setSearchQuery('');
+                                                setCurrentView('videos');
+                                            }}
+                                            className="px-4 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 text-base font-medium whitespace-nowrap"
+                                        >
+                                            Clear
+                                        </button>
+                                    )}
+                                </div>
                             </div>
-                            
-                            <div className="text-xl font-semibold mb-4">Playlist</div>
-                            {filteredVideos.length === 0 ? (
-                                <div className="text-gray-500">No videos in playlist</div>
-                            ) : (
-                                <div className="flex flex-col gap-2 max-h-96 overflow-y-auto">
-                                    {filteredVideos.map((video, index) => {
-                                        const originalIndex = videos.findIndex(v => v.url === video.url);
-                                        return (
-                                            <div
-                                                key={video.url} onClick={() => playVideo(video.filename)}
-                                                className={`p-3 rounded cursor-pointer transition relative ${
-                                                    originalIndex === currentIndex 
-                                                        ? 'bg-blue-100 border-l-4 border-blue-500' 
-                                                        : 'hover:bg-gray-100 border-l-4 border-transparent'
-                                                }`}
-                                            >
-                                                <div className="flex justify-between items-center gap-2">
-                                                    <div className="truncate">{video.title}</div>
-                                                    <div className="flex flex-col gap-1">
-                                                        <button onClick={(e) => openSourceURL(video.url, e)}
-                                                            className="px-2 py-1 bg-green-500 hover:bg-green-600 text-white rounded text-xs transition">
-                                                            Source
-                                                        </button>
-                                                        <button onClick={(e) => removeVideo(video.url, e)}
-                                                            className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded text-xs transition">
-                                                            Remove
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                                <div className="text-xs text-gray-500 mt-1">
-                                                    {getVideoSource(video)}
-                                                    {video.stats?.size && ` • ${formatFileSize(video.stats.size)}`}
-                                                </div>
-                                            </div>
-                                        )
-                                    })}
+
+                            {/* View Tabs */}
+                            {currentView !== 'search' && (
+                                <div className="flex border-b mb-6">
+                                    <button
+                                        onClick={() => setCurrentView('videos')}
+                                        className={`px-6 py-3 text-base font-medium transition-colors ${
+                                            currentView === 'videos'
+                                                ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50'
+                                                : 'text-gray-600 hover:text-blue-500 hover:bg-gray-50'
+                                        }`}
+                                    >
+                                        Videos ({videos.length})
+                                    </button>
+                                    <button
+                                        onClick={() => setCurrentView('webpages')}
+                                        className={`px-6 py-3 text-base font-medium transition-colors ${
+                                            currentView === 'webpages'
+                                                ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50'
+                                                : 'text-gray-600 hover:text-blue-500 hover:bg-gray-50'
+                                        }`}
+                                    >
+                                        Articles/Webpages ({webpages.length})
+                                    </button>
                                 </div>
                             )}
+
+                            {/* Header with Title */}
+                            <div className="mb-4">
+                                <div className="text-xl font-semibold mb-3">
+                                    {currentView === 'search' ? `Search Results` :
+                                     currentView === 'videos' ? 'Videos' : 'Articles/Webpages'}
+                                </div>
+
+                                {/* Controls Row */}
+                                <div className="space-y-3">
+                                    {currentView === 'videos' && (
+                                        <div className="flex items-center gap-2">
+                                            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Filter:</label>
+                                            <select
+                                                value={filterSource}
+                                                onChange={(e) => setFilterSource(e.target.value)}
+                                                className="px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-0"
+                                            >
+                                                <option value="all">All Videos</option>
+                                                <option value="archive">Archive.org</option>
+                                                <option value="cnn">CNN</option>
+                                                <option value="cspan">C-SPAN</option>
+                                                <option value="generic">Generic/Other</option>
+                                                <option value="reddit">Reddit</option>
+                                                <option value="twitter">Twitter/X</option>
+                                                <option value="youtube">YouTube</option>
+                                            </select>
+                                        </div>
+                                    )}
+                                    <div className="flex items-center gap-2">
+                                        <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Sort:</label>
+                                        <select
+                                            value={sortOption}
+                                            onChange={(e) => setSortOption(e.target.value)}
+                                            className="px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-0 flex-1"
+                                        >
+                                            <option value="date_desc">Date Added (Newest → Oldest)</option>
+                                            <option value="date_asc">Date Added (Oldest → Newest)</option>
+                                            <option value="title_asc">Title (A → Z)</option>
+                                            <option value="title_desc">Title (Z → A)</option>
+                                            <option value="platform_asc">Platform/Domain (A → Z)</option>
+                                            <option value="size_asc">File Size (Smallest → Largest)</option>
+                                            <option value="size_desc">File Size (Largest → Smallest)</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            {/* Unified Display System */}
+                            {(() => {
+                                let itemsToDisplay = [];
+                                let emptyMessage = "";
+
+                                if (currentView === 'search') {
+                                    itemsToDisplay = searchResults;
+                                    emptyMessage = searchQuery ? "No results found" : "Enter a search term";
+                                } else if (currentView === 'videos') {
+                                    itemsToDisplay = filteredVideos.map(v => ({...v, type: 'video'}));
+                                    emptyMessage = "No videos in playlist";
+                                } else if (currentView === 'webpages') {
+                                    itemsToDisplay = sortedWebpages.map(w => ({...w, type: 'webpage'}));
+                                    emptyMessage = "No webpages archived";
+                                }
+
+                                if (itemsToDisplay.length === 0) {
+                                    return <div className="text-gray-500">{emptyMessage}</div>;
+                                }
+
+                                return (
+                                    <div className="flex flex-col gap-2 max-h-96 overflow-y-auto">
+                                        {itemsToDisplay.map((item, index) => {
+                                            const isVideo = item.type === 'video';
+                                            const isWebpage = item.type === 'webpage';
+                                            const originalVideoIndex = isVideo ? videos.findIndex(v => v.url === item.url) : -1;
+                                            const isCurrentlyPlaying = isVideo && originalVideoIndex === currentIndex;
+
+                                            return (
+                                                <div
+                                                    key={`${item.type}-${item.url}`}
+                                                    onClick={() => isVideo && playVideo(item.filename)}
+                                                    className={`p-3 rounded transition relative ${
+                                                        isCurrentlyPlaying
+                                                            ? 'bg-blue-100 border-l-4 border-blue-500'
+                                                            : isVideo
+                                                                ? 'hover:bg-gray-100 border-l-4 border-transparent cursor-pointer'
+                                                                : 'hover:bg-gray-50 border-l-4 border-transparent'
+                                                    }`}
+                                                >
+                                                    <div className="flex justify-between items-start gap-2">
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-2 mb-1">
+                                                                <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                                                                    isVideo
+                                                                        ? 'bg-blue-100 text-blue-800'
+                                                                        : 'bg-purple-100 text-purple-800'
+                                                                }`}>
+                                                                    {isVideo ? (item.platform || 'Video') : (item.domain || 'Webpage')}
+                                                                </span>
+                                                                {/* Simulate sensitive content detection - in real implementation, this would check if item is from encrypted directory */}
+                                                                {(item.filename && item.filename.includes('_encrypted_')) && (
+                                                                    <span className="inline-block px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800 border border-red-200">
+                                                                        🔒 Sensitive
+                                                                    </span>
+                                                                )}
+                                                                {currentView === 'search' && (
+                                                                    <span className={`inline-block px-2 py-1 rounded text-xs ${
+                                                                        isVideo
+                                                                            ? 'bg-gray-100 text-gray-600'
+                                                                            : 'bg-orange-100 text-orange-600'
+                                                                    }`}>
+                                                                        {isVideo ? 'Video' : 'Article'}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <div className="font-medium truncate mb-1">{item.title}</div>
+                                                            <div className="text-sm text-gray-500 flex items-center gap-4">
+                                                                <span>
+                                                                    {isVideo
+                                                                        ? `${(item.stats?.size_mb || 0).toFixed(1)} MB`
+                                                                        : `${((item.filesize || 0) / 1024 / 1024).toFixed(1)} MB`
+                                                                    }
+                                                                </span>
+                                                                <span>
+                                                                    {formatDate(item.saved_date)}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex flex-col gap-1">
+                                                            <button
+                                                                onClick={(e) => openSourceURL(item.url, e)}
+                                                                className="px-2 py-1 bg-green-500 hover:bg-green-600 text-white rounded text-xs transition"
+                                                            >
+                                                                Source
+                                                            </button>
+                                                            {isWebpage && (
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        window.open(`/mucache/webpages/${encodeURIComponent(item.filename)}`, '_blank');
+                                                                    }}
+                                                                    className="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded text-xs transition"
+                                                                >
+                                                                    Open
+                                                                </button>
+                                                            )}
+                                                            <button
+                                                                onClick={(e) => isVideo ? removeVideo(item.url, e) : removeWebpage(item.url, e)}
+                                                                className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded text-xs transition"
+                                                            >
+                                                                Remove
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                );
+                            })()}
                         </div>
                     </div>
                     

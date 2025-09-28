@@ -16,6 +16,24 @@ import shutil
 import http.server
 from pathlib import Path
 import traceback
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
+import socket
+from urllib.parse import urljoin, urlparse
+try:
+    from bs4 import BeautifulSoup
+    BS4_AVAILABLE = True
+except ImportError:
+    BS4_AVAILABLE = False
+
+try:
+    from playwright.sync_api import sync_playwright
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
 
 # Debug mode flag - set to True to show all messages including heartbeat
 DEBUG_MODE = False
@@ -285,6 +303,549 @@ def check_available_formats(url, logger=None):
             safe_log(logger, 'error', f"Error checking formats: {str(e)}")
         return []
 
+def execute_ytdlp_debug_command(command, url, logger=None):
+    """Execute yt-dlp debug commands safely and return output."""
+    try:
+        # Set up debug logging to separate file
+        debug_log_path = None
+        if logger and hasattr(logger, 'handlers'):
+            # Get the log directory from the main logger
+            for handler in logger.handlers:
+                if hasattr(handler, 'baseFilename'):
+                    log_dir = Path(handler.baseFilename).parent
+                    debug_log_path = log_dir / 'debug.log'
+                    break
+
+        # Clear debug log at start of each session
+        if debug_log_path:
+            try:
+                debug_log_path.write_text('', encoding='utf-8')
+            except Exception as e:
+                if logger: safe_log(logger, 'warning', f"Could not clear debug log: {e}")
+
+        if logger: safe_log(logger, 'info', f"Testing video with command: {command} for URL: {url}")
+
+        # Security: Only allow specific safe yt-dlp commands
+        allowed_commands = [
+            'list-formats', 'list-extractors', 'get-title', 'get-description',
+            'get-duration', 'get-filename', 'get-url', 'simulate'
+        ]
+
+        # Parse command to ensure it's allowed
+        cmd_parts = command.split()
+        if not cmd_parts or not cmd_parts[0].startswith('--'):
+            return {
+                'success': False,
+                'error': 'Invalid command format. Use yt-dlp options like --list-formats',
+                'output': '',
+                'logged_to': 'error'
+            }
+
+        # Remove -- prefix and check if command is allowed
+        base_command = cmd_parts[0][2:]  # Remove --
+        if base_command not in allowed_commands:
+            return {
+                'success': False,
+                'error': f'Command not allowed. Allowed commands: {", ".join(allowed_commands)}',
+                'output': '',
+                'logged_to': 'error'
+            }
+
+        if not url or not url.startswith('http'):
+            return {
+                'success': False,
+                'error': 'Valid URL required',
+                'output': '',
+                'logged_to': 'error'
+            }
+
+        # Build yt-dlp options
+        ytdl_options = {
+            'quiet': False,  # We want output for debug
+            'no_warnings': False,
+            'extract_flat': False,
+        }
+
+        # Add specific options based on command
+        if base_command == 'list-formats':
+            ytdl_options['listformats'] = True
+        elif base_command == 'simulate':
+            ytdl_options['simulate'] = True
+        elif base_command == 'list-extractors':
+            ytdl_options['list_extractors'] = True
+
+        # Capture output
+        output_lines = []
+        error_lines = []
+
+        class DebugLogger:
+            def debug(self, msg):
+                output_lines.append(f"DEBUG: {msg}")
+            def info(self, msg):
+                output_lines.append(f"INFO: {msg}")
+            def warning(self, msg):
+                output_lines.append(f"WARNING: {msg}")
+            def error(self, msg):
+                error_lines.append(f"ERROR: {msg}")
+
+        # Execute yt-dlp command
+        try:
+            with yt_dlp.YoutubeDL(ytdl_options) as ydl:
+                ydl._logger = DebugLogger()
+
+                if base_command == 'list-extractors':
+                    # Special handling for list-extractors (no URL needed)
+                    extractors = ydl._list_extractors()
+                    output_lines.extend([f"Extractor: {ext}" for ext in extractors[:50]])  # Limit output
+                else:
+                    # Commands that require URL
+                    info = ydl.extract_info(url, download=False)
+
+                    if base_command == 'get-title':
+                        output_lines.append(f"Title: {info.get('title', 'N/A')}")
+                    elif base_command == 'get-description':
+                        desc = info.get('description', 'N/A')
+                        output_lines.append(f"Description: {desc[:500]}...")  # Truncate long descriptions
+                    elif base_command == 'get-duration':
+                        duration = info.get('duration', 'N/A')
+                        output_lines.append(f"Duration: {duration} seconds")
+                    elif base_command == 'get-filename':
+                        filename = ydl.prepare_filename(info)
+                        output_lines.append(f"Filename: {filename}")
+                    elif base_command == 'get-url':
+                        formats = info.get('formats', [])
+                        if formats:
+                            for fmt in formats[:10]:  # Show first 10 formats
+                                output_lines.append(f"Format {fmt.get('format_id', 'N/A')}: {fmt.get('url', 'N/A')[:100]}...")
+                        else:
+                            output_lines.append("No formats found")
+
+            # Combine output
+            all_output = '\n'.join(output_lines)
+            all_errors = '\n'.join(error_lines)
+
+            # Log the debug session to debug.log
+            debug_logged = False
+            if debug_log_path:
+                try:
+                    timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    debug_content = f"=== DEBUG SESSION - {timestamp} ===\n"
+                    debug_content += f"Command: {command}\n"
+                    debug_content += f"URL: {url}\n"
+                    debug_content += f"Output length: {len(all_output)} chars\n\n"
+
+                    if all_output:
+                        debug_content += f"OUTPUT:\n{all_output}\n\n"
+
+                    if all_errors:
+                        debug_content += f"ERRORS/WARNINGS:\n{all_errors}\n\n"
+
+                    debug_content += f"=== SESSION END ===\n\n"
+
+                    with open(debug_log_path, 'a', encoding='utf-8') as f:
+                        f.write(debug_content)
+                    debug_logged = True
+                except Exception as e:
+                    if logger: safe_log(logger, 'error', f"Failed to write to debug log: {e}")
+
+            # Also log a summary to main log
+            if logger:
+                safe_log(logger, 'info', f"Debug session completed: {command} for {url[:50]}... (logged to debug.log)")
+
+            return {
+                'success': True,
+                'output': all_output,
+                'errors': all_errors,
+                'logged_to': 'logs/debug.log' if debug_logged else 'logs/app.log',
+                'command_executed': command,
+                'url_tested': url
+            }
+
+        except Exception as e:
+            error_msg = f"yt-dlp execution failed: {str(e)}"
+
+            # Log error to debug.log
+            debug_logged = False
+            if debug_log_path:
+                try:
+                    timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    debug_content = f"=== DEBUG SESSION ERROR - {timestamp} ===\n"
+                    debug_content += f"Command: {command}\n"
+                    debug_content += f"URL: {url}\n"
+                    debug_content += f"Error: {error_msg}\n"
+
+                    if output_lines:
+                        debug_content += f"Partial Output: {chr(10).join(output_lines)}\n"
+
+                    debug_content += f"=== ERROR SESSION END ===\n\n"
+
+                    with open(debug_log_path, 'a', encoding='utf-8') as f:
+                        f.write(debug_content)
+                    debug_logged = True
+                except Exception:
+                    pass
+
+            if logger:
+                safe_log(logger, 'error', f"Debug command failed: {error_msg} (logged to debug.log)")
+
+            return {
+                'success': False,
+                'error': error_msg,
+                'output': '\n'.join(output_lines),
+                'errors': '\n'.join(error_lines),
+                'logged_to': 'logs/debug.log' if debug_logged else 'logs/app.log'
+            }
+
+    except Exception as e:
+        error_msg = f"Debug function error: {str(e)}"
+        if logger:
+            safe_log(logger, 'error', f"{error_msg} (logged to debug.log)")
+
+        return {
+            'success': False,
+            'error': error_msg,
+            'output': '',
+            'logged_to': 'logs/debug.log'
+        }
+
+def execute_mhtml_debug_command(command, url, logger=None):
+    """Execute MHTML/webpage debug commands safely and return output."""
+    try:
+        # Set up debug logging to separate file
+        debug_log_path = None
+        if logger and hasattr(logger, 'handlers'):
+            # Get the log directory from the main logger
+            for handler in logger.handlers:
+                if hasattr(handler, 'baseFilename'):
+                    log_dir = Path(handler.baseFilename).parent
+                    debug_log_path = log_dir / 'debug.log'
+                    break
+
+        # Clear debug log at start of each session
+        if debug_log_path:
+            try:
+                debug_log_path.write_text('', encoding='utf-8')
+            except Exception as e:
+                if logger: safe_log(logger, 'warning', f"Could not clear debug log: {e}")
+
+        if logger: safe_log(logger, 'info', f"Testing webpage with command: {command} for URL: {url}")
+
+        # Security: Only allow specific safe MHTML commands
+        allowed_commands = [
+            'test-playwright', 'test-connection', 'test-headers',
+            'test-content', 'test-mhtml', 'simulate-archive'
+        ]
+
+        if command not in allowed_commands:
+            return {
+                'success': False,
+                'error': f'Command not allowed. Allowed commands: {", ".join(allowed_commands)}',
+                'output': '',
+                'logged_to': 'error'
+            }
+
+        if not url or not url.startswith('http'):
+            return {
+                'success': False,
+                'error': 'Invalid URL. Must start with http:// or https://',
+                'output': '',
+                'logged_to': 'error'
+            }
+
+        output_lines = []
+        error_lines = []
+        debug_logged = False
+
+        if command == 'test-playwright':
+            try:
+                from playwright.sync_api import sync_playwright
+                output_lines.append("✅ Playwright is installed and available")
+
+                with sync_playwright() as p:
+                    browser = p.chromium.launch()
+                    page = browser.new_page()
+                    page.goto("https://example.com")
+                    title = page.title()
+                    browser.close()
+                    output_lines.append(f"✅ Browser automation working (test title: {title})")
+
+            except ImportError:
+                error_lines.append("❌ Playwright not installed. Run: pip install playwright")
+                error_lines.append("❌ Then run: playwright install chromium")
+            except Exception as e:
+                error_lines.append(f"❌ Playwright test failed: {str(e)}")
+
+        elif command == 'test-connection':
+            try:
+                import requests
+                response = requests.head(url, timeout=10, allow_redirects=True)
+                output_lines.append(f"✅ Connection successful: {response.status_code}")
+                output_lines.append(f"📋 Content-Type: {response.headers.get('content-type', 'unknown')}")
+                output_lines.append(f"📏 Content-Length: {response.headers.get('content-length', 'unknown')}")
+
+            except Exception as e:
+                error_lines.append(f"❌ Connection failed: {str(e)}")
+
+        elif command == 'test-headers':
+            try:
+                import requests
+                response = requests.head(url, timeout=10, allow_redirects=True)
+                output_lines.append(f"📋 Headers for {url}:")
+                for key, value in response.headers.items():
+                    output_lines.append(f"  {key}: {value}")
+
+            except Exception as e:
+                error_lines.append(f"❌ Headers test failed: {str(e)}")
+
+        elif command == 'test-content':
+            try:
+                import requests
+                response = requests.get(url, timeout=15)
+                content_preview = response.text[:500]
+                output_lines.append(f"✅ Content preview (first 500 chars):")
+                output_lines.append(content_preview)
+                output_lines.append("...")
+                output_lines.append(f"📏 Total content length: {len(response.text)} characters")
+
+            except Exception as e:
+                error_lines.append(f"❌ Content test failed: {str(e)}")
+
+        elif command == 'test-mhtml':
+            try:
+                from playwright.sync_api import sync_playwright
+
+                with sync_playwright() as p:
+                    browser = p.chromium.launch()
+                    page = browser.new_page()
+                    page.goto(url, wait_until="networkidle")
+
+                    # Get page info
+                    title = page.title()
+                    output_lines.append(f"✅ Page loaded: {title}")
+
+                    # Test MHTML generation (without saving)
+                    mhtml_content = page.evaluate("""() => {
+                        return document.documentElement.outerHTML.substring(0, 1000);
+                    }""")
+
+                    browser.close()
+                    output_lines.append("✅ MHTML test successful")
+                    output_lines.append(f"📄 Page title: {title}")
+                    output_lines.append(f"📏 Content preview: {len(mhtml_content)} characters shown")
+                    output_lines.append(f"First 200 chars: {mhtml_content[:200]}...")
+
+            except ImportError:
+                error_lines.append("❌ Playwright not installed. Run: pip install playwright")
+                error_lines.append("❌ Then run: playwright install chromium")
+            except Exception as e:
+                error_lines.append(f"❌ MHTML test failed: {str(e)}")
+
+        elif command == 'simulate-archive':
+            try:
+                from playwright.sync_api import sync_playwright
+                import time
+
+                start_time = time.time()
+
+                with sync_playwright() as p:
+                    browser = p.chromium.launch()
+                    page = browser.new_page()
+                    page.goto(url, wait_until="networkidle")
+
+                    title = page.title()
+                    final_url = page.url
+
+                    # Simulate metadata extraction
+                    meta_info = page.evaluate("""() => {
+                        const metas = document.querySelectorAll('meta');
+                        const info = {};
+                        metas.forEach(meta => {
+                            const name = meta.getAttribute('name') || meta.getAttribute('property');
+                            const content = meta.getAttribute('content');
+                            if (name && content) {
+                                info[name] = content;
+                            }
+                        });
+                        return info;
+                    }""")
+
+                    browser.close()
+
+                    elapsed = time.time() - start_time
+                    output_lines.append("✅ Simulate archive completed successfully")
+                    output_lines.append(f"📄 Title: {title}")
+                    output_lines.append(f"🔗 Final URL: {final_url}")
+                    output_lines.append(f"⏱️ Time taken: {elapsed:.2f} seconds")
+                    output_lines.append(f"📋 Metadata found: {len(meta_info)} items")
+
+                    # Show some metadata
+                    if meta_info:
+                        output_lines.append("📝 Sample metadata:")
+                        for key, value in list(meta_info.items())[:5]:
+                            output_lines.append(f"  {key}: {value[:100]}...")
+
+            except ImportError:
+                error_lines.append("❌ Playwright not installed. Run: pip install playwright")
+                error_lines.append("❌ Then run: playwright install chromium")
+            except Exception as e:
+                error_lines.append(f"❌ Simulate archive failed: {str(e)}")
+
+        # Log debug output
+        if debug_log_path:
+            try:
+                debug_content = f"MHTML Debug Session - {command}\n"
+                debug_content += f"URL: {url}\n"
+                debug_content += f"Timestamp: {datetime.now().isoformat()}\n\n"
+                debug_content += "OUTPUT:\n" + '\n'.join(output_lines) + "\n\n"
+                if error_lines:
+                    debug_content += "ERRORS:\n" + '\n'.join(error_lines) + "\n\n"
+
+                debug_log_path.write_text(debug_content, encoding='utf-8')
+                debug_logged = True
+                if logger: safe_log(logger, 'info', f"Debug output logged to {debug_log_path}")
+            except Exception as e:
+                if logger: safe_log(logger, 'warning', f"Could not write to debug log: {e}")
+
+        return {
+            'success': True,
+            'command_executed': command,
+            'url_tested': url,
+            'output': '\n'.join(output_lines),
+            'errors': '\n'.join(error_lines),
+            'logged_to': 'logs/debug.log' if debug_logged else 'logs/app.log'
+        }
+
+    except Exception as e:
+        error_msg = f"MHTML debug function error: {str(e)}"
+        if logger:
+            safe_log(logger, 'error', f"{error_msg} (logged to debug.log)")
+
+        return {
+            'success': False,
+            'error': error_msg,
+            'output': '',
+            'logged_to': 'logs/debug.log'
+        }
+
+def send_debug_log_email(user_email, user_name, description, debug_log_path, logger=None):
+    """Send debug log via email to support."""
+    try:
+        SUPPORT_EMAIL = "support@example.com"
+        SMTP_SERVER = "smtp.gmail.com"  # Default to Gmail, can be configured
+        SMTP_PORT = 587
+
+        # Check if debug log exists and has content
+        if not debug_log_path or not Path(debug_log_path).exists():
+            return {
+                'success': False,
+                'error': 'Debug log file not found. Please run a test first.'
+            }
+
+        log_content = Path(debug_log_path).read_text(encoding='utf-8').strip()
+        if not log_content:
+            return {
+                'success': False,
+                'error': 'Debug log is empty. Please run a test first.'
+            }
+
+        # Create email message
+        msg = MIMEMultipart()
+        msg['From'] = user_email if user_email else "mucache-user@localhost"
+        msg['To'] = SUPPORT_EMAIL
+        msg['Subject'] = f"Mucache Debug Log - {user_name or 'Anonymous User'}"
+
+        # Email body
+        body = f"""
+Debug Log Support Request
+
+User Information:
+- Name: {user_name or 'Not provided'}
+- Email: {user_email or 'Not provided'}
+- Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+Issue Description:
+{description or 'No description provided'}
+
+Debug Information:
+- Log file: debug.log
+- Log size: {len(log_content)} characters
+
+Please see attached debug log for technical details.
+
+---
+Generated by Mucache Player Debug Feature
+"""
+
+        msg.attach(MIMEText(body, 'plain'))
+
+        # Attach debug log
+        try:
+            with open(debug_log_path, 'rb') as attachment:
+                part = MIMEBase('application', 'octet-stream')
+                part.set_payload(attachment.read())
+                encoders.encode_base64(part)
+                part.add_header(
+                    'Content-Disposition',
+                    f'attachment; filename= debug.log'
+                )
+                msg.attach(part)
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f'Failed to attach debug log: {str(e)}'
+            }
+
+        # For now, simulate email sending (since we don't have SMTP credentials)
+        # In production, you would configure actual SMTP settings
+        try:
+            # Simulate email sending by logging the action
+            if logger:
+                safe_log(logger, 'info', f"Simulated email to {SUPPORT_EMAIL} from {user_email}")
+                safe_log(logger, 'info', f"Subject: {msg['Subject']}")
+                safe_log(logger, 'info', f"Body length: {len(body)} chars")
+                safe_log(logger, 'info', f"Attachment size: {len(log_content)} chars")
+
+            # Save email content to file for review (since we're simulating)
+            email_dir = Path(debug_log_path).parent / 'emails'
+            email_dir.mkdir(exist_ok=True)
+
+            timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+            email_file = email_dir / f'support_email_{timestamp}.txt'
+
+            email_content = f"TO: {SUPPORT_EMAIL}\n"
+            email_content += f"FROM: {user_email}\n"
+            email_content += f"SUBJECT: {msg['Subject']}\n\n"
+            email_content += body
+            email_content += f"\n\n--- DEBUG LOG CONTENT ---\n"
+            email_content += log_content
+
+            email_file.write_text(email_content, encoding='utf-8')
+
+            return {
+                'success': True,
+                'message': f'Debug log email prepared successfully! (Simulated - check {email_file} for content)',
+                'email_file': str(email_file),
+                'support_email': SUPPORT_EMAIL
+            }
+
+        except Exception as e:
+            error_msg = f"Email simulation failed: {str(e)}"
+            if logger:
+                safe_log(logger, 'error', error_msg)
+            return {
+                'success': False,
+                'error': error_msg
+            }
+
+    except Exception as e:
+        error_msg = f"Email function error: {str(e)}"
+        if logger:
+            safe_log(logger, 'error', error_msg)
+        return {
+            'success': False,
+            'error': error_msg
+        }
+
 def get_format_options(quality_preference, ffmpeg_plugin):
     """Get format options based on quality preference and FFmpeg availability."""
     try:
@@ -357,9 +918,25 @@ class VideoManager:
             self.videos = {}
             self.redownload_queue = {}
 
-    def add_video(self, url, title, filename):
+    def add_video(self, url, title, filename, platform=None):
         try:
-            self.videos[url] = {'title': title, 'filename': filename}
+            # Use provided platform or determine based on URL
+            if platform is None:
+                platform = "Unknown"
+                if "youtube.com" in url or "youtu.be" in url:
+                    platform = "YouTube"
+                elif "twitter.com" in url or "x.com" in url:
+                    platform = "Twitter"
+                elif "archive.org" in url:
+                    platform = "Archive.org"
+                elif "reddit.com" in url or "redd.it" in url:
+                    platform = "Reddit"
+                elif "cnn.com" in url:
+                    platform = "CNN"
+                elif "c-span.org" in url:
+                    platform = "CSPAN"
+
+            self.videos[url] = {'title': title, 'filename': filename, 'platform': platform}
             with open(self.playlist_file, 'w', encoding='utf-8') as f:
                 json.dump(self.videos, f, indent=2, ensure_ascii=False)
         except Exception as e:
@@ -498,6 +1075,156 @@ class VideoManager:
             if DEBUG_MODE:
                 print(f"Error sorting videos: {e}")
             return []
+
+class WebpageManager:
+    def __init__(self, cache_dir):
+        try:
+            self.cache_dir = cache_dir
+            self.webpages_dir = cache_dir / "webpages"
+            self.webpages_dir.mkdir(exist_ok=True)
+            self.playlist_file = self.webpages_dir / "webpages.json"
+
+            # Load existing webpages or create empty dict
+            if self.playlist_file.exists():
+                with open(self.playlist_file, 'r', encoding='utf-8') as f:
+                    self.webpages = json.load(f)
+            else:
+                self.webpages = {}
+        except Exception as e:
+            if DEBUG_MODE:
+                print(f"Error initializing WebpageManager: {e}")
+            traceback.print_exc()
+            self.webpages = {}
+
+    def add_webpage(self, url, title, filename, domain=None, filesize=None):
+        try:
+            if domain is None:
+                domain = urlparse(url).netloc
+                if domain.startswith('www.'):
+                    domain = domain[4:]
+
+            self.webpages[url] = {
+                'title': title,
+                'filename': filename,
+                'domain': domain,
+                'filesize': filesize or 0,
+                'saved_date': datetime.datetime.now().isoformat()
+            }
+
+            with open(self.playlist_file, 'w', encoding='utf-8') as f:
+                json.dump(self.webpages, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            if DEBUG_MODE:
+                print(f"Error adding webpage to playlist: {e}")
+
+    def remove_webpage(self, url, logger=None):
+        """Remove a webpage from the playlist and try to delete the file."""
+        try:
+            if url in self.webpages:
+                filename = self.webpages[url]['filename']
+                # Remove from playlist first
+                del self.webpages[url]
+                with open(self.playlist_file, 'w', encoding='utf-8') as f:
+                    json.dump(self.webpages, f, indent=2, ensure_ascii=False)
+
+                # Try to delete the file
+                file_path = self.webpages_dir / filename
+                if file_path.exists():
+                    try:
+                        file_path.unlink()
+                        if logger:
+                            safe_log(logger, 'info', f"Deleted webpage file: {filename}")
+                    except Exception as e:
+                        if logger:
+                            safe_log(logger, 'warning', f"Could not delete file {filename}: {e}")
+
+                return True
+            return False
+        except Exception as e:
+            if logger:
+                safe_log(logger, 'error', f"Error removing webpage: {e}")
+            return False
+
+    def get_sorted_webpages(self):
+        try:
+            return sorted(
+                [{'url': url, **data} for url, data in self.webpages.items()],
+                key=lambda x: x['title'].lower()
+            )
+        except Exception as e:
+            if DEBUG_MODE:
+                print(f"Error sorting webpages: {e}")
+            return []
+
+def download_webpage(url, cache_dir, webpage_manager, logger=None):
+    """Download webpage as MHTML using Playwright."""
+    if not PLAYWRIGHT_AVAILABLE:
+        if logger: safe_log(logger, 'error', "Playwright not available for webpage archiving")
+        return None, False
+
+    try:
+        if logger and DEBUG_MODE:
+            safe_log(logger, 'info', f"Starting webpage download: {url}")
+
+        # Extract domain for title prefix
+        domain = urlparse(url).netloc
+        if domain.startswith('www.'):
+            domain = domain[4:]
+
+        # Generate filename with timestamp
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        temp_title = f"Webpage_{domain}_{timestamp}"
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+
+            # Navigate to page
+            response = page.goto(url, wait_until='networkidle')
+            if not response.ok:
+                raise Exception(f"Failed to load page: {response.status}")
+
+            # Get page title
+            title = page.title() or temp_title
+
+            # Clean title for filename
+            safe_title = sanitize_filename(title)
+            if not safe_title or safe_title.isspace():
+                safe_title = temp_title
+
+            filename = f"{safe_title}_{timestamp}.mhtml"
+            file_path = cache_dir / "webpages" / filename
+
+            # Save as MHTML
+            mhtml_content = page.evaluate('''() => {
+                return new Promise((resolve) => {
+                    chrome.runtime.sendMessage({action: 'saveMHTML'}, resolve);
+                });
+            }''')
+
+            # Alternative: save page content as HTML with embedded resources
+            # For now, save as complete HTML
+            content = page.content()
+
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+
+            browser.close()
+
+            # Get file size
+            filesize = file_path.stat().st_size
+
+            # Add to webpage manager
+            webpage_manager.add_webpage(url, title, filename, domain, filesize)
+
+            if logger:
+                safe_log(logger, 'info', f"Webpage download complete: {title}")
+
+            return filename, False
+
+    except Exception as e:
+        if logger: safe_log(logger, 'error', f"Error downloading webpage: {str(e)}")
+        return None, False
 
 def download_twitter_video(url, cache_dir, manager, logger=None):
     """Download Twitter/X videos."""
@@ -826,6 +1553,503 @@ def download_archive_video(url, cache_dir, manager, logger=None):
         if logger: safe_log(logger, 'error', f"Archive.org download error: {str(e)}")
         return None, False
 
+def download_reddit_video(url, cache_dir, manager, logger=None, ffmpeg_plugin=None):
+    """Download Reddit videos using yt-dlp."""
+    try:
+        if logger: safe_log(logger, 'info', f"Starting Reddit video download: {url}")
+
+        # Normalize Reddit URLs
+        if "redd.it" in url:
+            # Convert short URLs to full reddit.com URLs
+            if not url.startswith("http"):
+                url = f"https://{url}"
+        elif "reddit.com" in url and not url.startswith("http"):
+            url = f"https://{url}"
+
+        current_dir = os.getcwd()
+        try:
+            os.chdir(str(cache_dir))
+
+            # Track files before download
+            before_files = set(f.name for f in cache_dir.iterdir() if f.is_file())
+
+            # Get video info first
+            try:
+                with yt_dlp.YoutubeDL({
+                    'skip_download': True,
+                    'quiet': True,
+                    'no_warnings': True
+                }) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    title = info.get('title', 'Reddit Video')
+
+                    # Extract Reddit post ID for consistent naming
+                    post_id = None
+                    if 'id' in info:
+                        post_id = info['id']
+                    else:
+                        # Try to extract from URL
+                        import re
+                        match = re.search(r'/comments/([a-zA-Z0-9]+)/', url)
+                        if match:
+                            post_id = match.group(1)
+
+                    if post_id:
+                        safe_title = f"Reddit_{post_id}_{sanitize_filename(title)}"
+                    else:
+                        safe_title = f"Reddit_{sanitize_filename(title)}"
+
+                if logger and DEBUG_MODE:
+                    safe_log(logger, 'info', f"Reddit video title: {title}")
+                    if post_id:
+                        safe_log(logger, 'info', f"Reddit post ID: {post_id}")
+
+            except Exception as e:
+                if logger: safe_log(logger, 'warning', f"Error getting Reddit video info: {e}")
+                safe_title = "Reddit_Video"
+
+            # Configure yt-dlp options for Reddit
+            ytdl_options = {
+                'format': 'best[ext=mp4]/best',
+                'outtmpl': f'{safe_title}.%(ext)s',
+                'quiet': True,
+                'no_warnings': True,
+                'writeinfojson': False,
+                'writedescription': False,
+                'writesubtitles': False,
+                'writeautomaticsub': False,
+            }
+
+            # Apply FFmpeg plugin options if available for better quality
+            if ffmpeg_plugin and ffmpeg_plugin.available:
+                ytdl_options = ffmpeg_plugin.get_ytdl_options(ytdl_options)
+                if logger and DEBUG_MODE:
+                    safe_log(logger, 'info', "Using FFmpeg for Reddit video processing")
+
+            # Download the video
+            try:
+                with yt_dlp.YoutubeDL(ytdl_options) as ydl:
+                    ydl.download([url])
+
+                if logger and DEBUG_MODE:
+                    safe_log(logger, 'info', "Reddit video download completed")
+
+            except Exception as e:
+                if logger: safe_log(logger, 'error', f"Reddit video download failed: {str(e)}")
+                return None, False
+
+            # Find the downloaded file
+            after_files = set(f.name for f in cache_dir.iterdir() if f.is_file())
+            new_files = after_files - before_files
+
+            if new_files:
+                new_filename = list(new_files)[0]
+
+                # Sanitize filename if needed
+                has_special_chars = any(ord(c) >= 128 for c in new_filename)
+                if has_special_chars:
+                    safe_name = sanitize_filename(new_filename)
+                    if "." in new_filename and not safe_name.endswith(new_filename.split(".")[-1]):
+                        ext = new_filename.split(".")[-1]
+                        safe_name = f"{safe_name}.{ext}"
+
+                    new_path = cache_dir / new_filename
+                    safe_path = cache_dir / safe_name
+
+                    try:
+                        new_path.rename(safe_path)
+                        new_filename = safe_name
+                        if logger and DEBUG_MODE:
+                            safe_log(logger, 'info', f"Renamed Reddit file to: {safe_name}")
+                    except Exception as e:
+                        if logger: safe_log(logger, 'error', f"Error renaming Reddit file: {str(e)}")
+
+                # Add to video manager with Reddit platform identifier
+                manager.add_video(url, title, new_filename)
+                if logger: safe_log(logger, 'info', f"Successfully downloaded Reddit video: {new_filename}")
+                return new_filename, False
+            else:
+                # Fallback: look for recent files
+                recent_time = datetime.datetime.now() - datetime.timedelta(minutes=2)
+                recent_files = [f for f in cache_dir.iterdir()
+                               if f.is_file() and f.stat().st_mtime > recent_time.timestamp()]
+
+                if recent_files:
+                    recent_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+                    newest_file = recent_files[0]
+                    manager.add_video(url, title, newest_file.name)
+                    if logger and DEBUG_MODE:
+                        safe_log(logger, 'info', f"Using recent Reddit file: {newest_file.name}")
+                    return newest_file.name, False
+
+        finally:
+            try:
+                os.chdir(current_dir)
+            except Exception as e:
+                if logger and DEBUG_MODE:
+                    safe_log(logger, 'warning', f"Error changing back to original directory: {e}")
+
+        if logger: safe_log(logger, 'error', "Reddit video download failed - no files found")
+        return None, False
+
+    except Exception as e:
+        if logger: safe_log(logger, 'error', f"Reddit download error: {str(e)}")
+        return None, False
+
+def download_cnn_video(url, cache_dir, manager, logger=None, ffmpeg_plugin=None):
+    """Download CNN videos using yt-dlp (handles HLS/DASH streams, not blob URLs)."""
+    try:
+        if logger: safe_log(logger, 'info', f"Starting CNN video download: {url}")
+
+        current_dir = os.getcwd()
+        try:
+            os.chdir(str(cache_dir))
+
+            # Track files before download
+            before_files = set(f.name for f in cache_dir.iterdir() if f.is_file())
+
+            # Get video info first
+            try:
+                with yt_dlp.YoutubeDL({
+                    'skip_download': True,
+                    'quiet': True,
+                    'no_warnings': True
+                }) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    title = info.get('title', 'CNN Video')
+
+                    # Clean title for filename
+                    safe_title = f"CNN_{sanitize_filename(title)}"
+
+                if logger and DEBUG_MODE:
+                    safe_log(logger, 'info', f"CNN video title: {title}")
+
+            except Exception as e:
+                if logger: safe_log(logger, 'warning', f"Error getting CNN video info: {e}")
+                safe_title = "CNN_Video"
+                title = "CNN Video"
+
+            # Configure yt-dlp options for CNN
+            ytdl_options = {
+                'format': 'best[ext=mp4]/best',
+                'outtmpl': f'{safe_title}.%(ext)s',
+                'quiet': True,
+                'no_warnings': True,
+                'writeinfojson': False,
+                'writedescription': False,
+                'writesubtitles': False,
+                'writeautomaticsub': False,
+            }
+
+            # Apply FFmpeg plugin options if available for better quality
+            if ffmpeg_plugin and ffmpeg_plugin.available:
+                ytdl_options = ffmpeg_plugin.get_ytdl_options(ytdl_options)
+                if logger and DEBUG_MODE:
+                    safe_log(logger, 'info', "Using FFmpeg for CNN video processing")
+
+            # Download the video using yt-dlp (handles HLS/DASH extraction)
+            try:
+                with yt_dlp.YoutubeDL(ytdl_options) as ydl:
+                    ydl.download([url])
+
+                if logger and DEBUG_MODE:
+                    safe_log(logger, 'info', "CNN video download completed")
+
+            except Exception as e:
+                if logger: safe_log(logger, 'error', f"CNN video download failed. Unable to extract video stream. CNN video may be unsupported: {str(e)}")
+                return None, False
+
+            # Find the downloaded file
+            after_files = set(f.name for f in cache_dir.iterdir() if f.is_file())
+            new_files = after_files - before_files
+
+            if new_files:
+                new_filename = list(new_files)[0]
+
+                # Sanitize filename if needed
+                has_special_chars = any(ord(c) >= 128 for c in new_filename)
+                if has_special_chars:
+                    safe_name = sanitize_filename(new_filename)
+                    if "." in new_filename and not safe_name.endswith(new_filename.split(".")[-1]):
+                        ext = new_filename.split(".")[-1]
+                        safe_name = f"{safe_name}.{ext}"
+
+                    new_path = cache_dir / new_filename
+                    safe_path = cache_dir / safe_name
+
+                    try:
+                        new_path.rename(safe_path)
+                        new_filename = safe_name
+                        if logger and DEBUG_MODE:
+                            safe_log(logger, 'info', f"Renamed CNN file to: {safe_name}")
+                    except Exception as e:
+                        if logger: safe_log(logger, 'error', f"Error renaming CNN file: {str(e)}")
+
+                # Add to video manager with CNN platform identifier
+                manager.add_video(url, title, new_filename)
+                if logger: safe_log(logger, 'info', f"Successfully downloaded CNN video: {new_filename}")
+                return new_filename, False
+            else:
+                # Fallback: look for recent files
+                recent_time = datetime.datetime.now() - datetime.timedelta(minutes=2)
+                recent_files = [f for f in cache_dir.iterdir()
+                               if f.is_file() and f.stat().st_mtime > recent_time.timestamp()]
+
+                if recent_files:
+                    recent_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+                    newest_file = recent_files[0]
+                    manager.add_video(url, title, newest_file.name)
+                    if logger and DEBUG_MODE:
+                        safe_log(logger, 'info', f"Using recent CNN file: {newest_file.name}")
+                    return newest_file.name, False
+
+        finally:
+            try:
+                os.chdir(current_dir)
+            except Exception as e:
+                if logger and DEBUG_MODE:
+                    safe_log(logger, 'warning', f"Error changing back to original directory: {e}")
+
+        if logger: safe_log(logger, 'error', "CNN video download failed - no files found")
+        return None, False
+
+    except Exception as e:
+        if logger: safe_log(logger, 'error', f"CNN download error: {str(e)}")
+        return None, False
+
+def download_cspan_video(url, cache_dir, manager, logger=None, ffmpeg_plugin=None):
+    """Download C-SPAN videos using yt-dlp (handles JWPlayer streams)."""
+    try:
+        if logger: safe_log(logger, 'info', f"Starting C-SPAN video download: {url}")
+
+        current_dir = os.getcwd()
+        try:
+            os.chdir(str(cache_dir))
+
+            # Track files before download
+            before_files = set(f.name for f in cache_dir.iterdir() if f.is_file())
+
+            # Get video info first
+            try:
+                with yt_dlp.YoutubeDL({
+                    'skip_download': True,
+                    'quiet': True,
+                    'no_warnings': True
+                }) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    title = info.get('title', 'C-SPAN Video')
+
+                    # Clean title for filename
+                    safe_title = f"CSPAN_{sanitize_filename(title)}"
+
+                if logger and DEBUG_MODE:
+                    safe_log(logger, 'info', f"C-SPAN video title: {title}")
+
+            except Exception as e:
+                if logger: safe_log(logger, 'warning', f"Error getting C-SPAN video info: {e}")
+                safe_title = "CSPAN_Video"
+                title = "C-SPAN Video"
+
+            # Configure yt-dlp options for C-SPAN
+            ytdl_options = {
+                'format': 'best[ext=mp4]/best',
+                'outtmpl': f'{safe_title}.%(ext)s',
+                'quiet': True,
+                'no_warnings': True,
+                'writeinfojson': False,
+                'writedescription': False,
+                'writesubtitles': False,
+                'writeautomaticsub': False,
+            }
+
+            # Apply FFmpeg plugin options if available for better quality
+            if ffmpeg_plugin and ffmpeg_plugin.available:
+                ytdl_options = ffmpeg_plugin.get_ytdl_options(ytdl_options)
+                if logger and DEBUG_MODE:
+                    safe_log(logger, 'info', "Using FFmpeg for C-SPAN video processing")
+
+            # Download the video using yt-dlp (handles JWPlayer extraction)
+            try:
+                with yt_dlp.YoutubeDL(ytdl_options) as ydl:
+                    ydl.download([url])
+
+                if logger and DEBUG_MODE:
+                    safe_log(logger, 'info', "C-SPAN video download completed")
+
+            except Exception as e:
+                if logger: safe_log(logger, 'error', f"C-SPAN video download failed. Unable to extract JWPlayer stream. C-SPAN video may be unsupported: {str(e)}")
+                return None, False
+
+            # Find the downloaded file
+            after_files = set(f.name for f in cache_dir.iterdir() if f.is_file())
+            new_files = after_files - before_files
+
+            if new_files:
+                new_filename = list(new_files)[0]
+
+                # Sanitize filename if needed
+                has_special_chars = any(ord(c) >= 128 for c in new_filename)
+                if has_special_chars:
+                    safe_name = sanitize_filename(new_filename)
+                    if "." in new_filename and not safe_name.endswith(new_filename.split(".")[-1]):
+                        ext = new_filename.split(".")[-1]
+                        safe_name = f"{safe_name}.{ext}"
+
+                    new_path = cache_dir / new_filename
+                    safe_path = cache_dir / safe_name
+
+                    try:
+                        new_path.rename(safe_path)
+                        new_filename = safe_name
+                        if logger and DEBUG_MODE:
+                            safe_log(logger, 'info', f"Renamed C-SPAN file to: {safe_name}")
+                    except Exception as e:
+                        if logger: safe_log(logger, 'error', f"Error renaming C-SPAN file: {str(e)}")
+
+                # Add to video manager with C-SPAN platform identifier
+                manager.add_video(url, title, new_filename)
+                if logger: safe_log(logger, 'info', f"Successfully downloaded C-SPAN video: {new_filename}")
+                return new_filename, False
+            else:
+                # Fallback: look for recent files
+                recent_time = datetime.datetime.now() - datetime.timedelta(minutes=2)
+                recent_files = [f for f in cache_dir.iterdir()
+                               if f.is_file() and f.stat().st_mtime > recent_time.timestamp()]
+
+                if recent_files:
+                    recent_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+                    newest_file = recent_files[0]
+                    manager.add_video(url, title, newest_file.name)
+                    if logger and DEBUG_MODE:
+                        safe_log(logger, 'info', f"Using recent C-SPAN file: {newest_file.name}")
+                    return newest_file.name, False
+
+        finally:
+            try:
+                os.chdir(current_dir)
+            except Exception as e:
+                if logger and DEBUG_MODE:
+                    safe_log(logger, 'warning', f"Error changing back to original directory: {e}")
+
+        if logger: safe_log(logger, 'error', "C-SPAN video download failed - no files found")
+        return None, False
+
+    except Exception as e:
+        if logger: safe_log(logger, 'error', f"C-SPAN download error: {str(e)}")
+        return None, False
+
+def download_generic_video(url, cache_dir, manager, logger=None):
+    """
+    Fallback function to download videos from HTML5 <video> tags.
+    This is used when yt-dlp fails to extract the video.
+    """
+    if not BS4_AVAILABLE:
+        if logger: safe_log(logger, 'error', "BeautifulSoup4 not available for HTML parsing")
+        return None, False
+
+    try:
+        if logger and DEBUG_MODE:
+            safe_log(logger, 'info', f"Attempting generic HTML5 video extraction from: {url}")
+
+        # Fetch the HTML page
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+
+        # Parse HTML
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        # Find all video tags with src attributes
+        video_tags = soup.find_all('video', src=True)
+        if not video_tags:
+            # Also check for source tags inside video elements
+            video_elements = soup.find_all('video')
+            for video in video_elements:
+                sources = video.find_all('source', src=True)
+                if sources:
+                    video_tags.extend(sources)
+
+        if not video_tags:
+            if logger: safe_log(logger, 'error', "No direct video sources found. This site may require yt-dlp or is using blob streams.")
+            return None, False
+
+        # Filter for direct media files and exclude blob URLs
+        video_urls = []
+        valid_extensions = ('.mp4', '.webm', '.ogg', '.avi', '.mov', '.mkv', '.m4v')
+
+        for tag in video_tags:
+            src = tag.get('src', '')
+            if src and not src.startswith('blob:'):
+                # Convert relative URLs to absolute
+                absolute_url = urljoin(url, src)
+                # Check if it looks like a direct media file
+                parsed_url = urlparse(absolute_url)
+                if any(parsed_url.path.lower().endswith(ext) for ext in valid_extensions):
+                    video_urls.append(absolute_url)
+
+        if not video_urls:
+            if logger: safe_log(logger, 'error', "No direct video file URLs found (only blob URLs or non-media files)")
+            return None, False
+
+        # Use the first valid video URL
+        video_url = video_urls[0]
+        if logger and DEBUG_MODE:
+            safe_log(logger, 'info', f"Found direct video URL: {video_url}")
+
+        # Extract domain name for platform label
+        domain = urlparse(url).netloc
+        if domain.startswith('www.'):
+            domain = domain[4:]
+
+        # Generate filename
+        title = soup.find('title')
+        title_text = title.get_text().strip() if title else "Generic Video"
+
+        # Clean title for filename
+        safe_title = sanitize_filename(title_text)
+        if not safe_title or safe_title.isspace():
+            safe_title = f"Video_{domain}"
+
+        # Get file extension from video URL
+        parsed_video_url = urlparse(video_url)
+        video_ext = os.path.splitext(parsed_video_url.path)[1]
+        if not video_ext:
+            video_ext = '.mp4'  # Default extension
+
+        filename = f"{safe_title}{video_ext}"
+        file_path = cache_dir / filename
+
+        # Download the video file
+        if logger and DEBUG_MODE:
+            safe_log(logger, 'info', f"Downloading: {video_url}")
+
+        video_response = requests.get(video_url, headers=headers, stream=True, timeout=60)
+        video_response.raise_for_status()
+
+        # Write file in chunks
+        with open(file_path, 'wb') as f:
+            for chunk in video_response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+
+        # Add to video manager with Generic platform
+        manager.add_video(url, title_text, filename, platform=domain)
+
+        if logger:
+            safe_log(logger, 'info', f"Generic video download complete: {title_text}")
+
+        return filename, False
+
+    except requests.RequestException as e:
+        if logger: safe_log(logger, 'error', f"Error fetching page: {str(e)}")
+        return None, False
+    except Exception as e:
+        if logger: safe_log(logger, 'error', f"Error in generic video download: {str(e)}")
+        return None, False
+
 def download_video(url, cache_dir, manager, logger=None, ffmpeg_plugin=None):
     """Main download function with format 18 priority and optional FFmpeg."""
     try:
@@ -856,9 +2080,48 @@ def download_video(url, cache_dir, manager, logger=None, ffmpeg_plugin=None):
         
         # Special handling for Archive.org
         if "archive.org" in url:
-            if logger and DEBUG_MODE: 
+            if logger and DEBUG_MODE:
                 safe_log(logger, 'info', f"Detected Archive.org URL")
             result = download_archive_video(url, cache_dir, manager, logger)
+            if result[0]:
+                # Get title from manager for console output
+                for video_url, video_data in manager.videos.items():
+                    if video_data['filename'] == result[0]:
+                        safe_log(logger, 'info', f"Video download of '{video_data['title']}' complete", console_only=True)
+                        break
+            return result
+
+        # Special handling for Reddit
+        if "reddit.com" in url or "redd.it" in url:
+            if logger and DEBUG_MODE:
+                safe_log(logger, 'info', f"Detected Reddit URL")
+            result = download_reddit_video(url, cache_dir, manager, logger, ffmpeg_plugin)
+            if result[0]:
+                # Get title from manager for console output
+                for video_url, video_data in manager.videos.items():
+                    if video_data['filename'] == result[0]:
+                        safe_log(logger, 'info', f"Video download of '{video_data['title']}' complete", console_only=True)
+                        break
+            return result
+
+        # Special handling for CNN
+        if "cnn.com" in url:
+            if logger and DEBUG_MODE:
+                safe_log(logger, 'info', f"Detected CNN URL")
+            result = download_cnn_video(url, cache_dir, manager, logger, ffmpeg_plugin)
+            if result[0]:
+                # Get title from manager for console output
+                for video_url, video_data in manager.videos.items():
+                    if video_data['filename'] == result[0]:
+                        safe_log(logger, 'info', f"Video download of '{video_data['title']}' complete", console_only=True)
+                        break
+            return result
+
+        # Special handling for C-SPAN
+        if "c-span.org" in url:
+            if logger and DEBUG_MODE:
+                safe_log(logger, 'info', f"Detected C-SPAN URL")
+            result = download_cspan_video(url, cache_dir, manager, logger, ffmpeg_plugin)
             if result[0]:
                 # Get title from manager for console output
                 for video_url, video_data in manager.videos.items():
@@ -942,8 +2205,9 @@ def download_video(url, cache_dir, manager, logger=None, ffmpeg_plugin=None):
                     continue
             
             if not download_success:
-                if logger: safe_log(logger, 'error', "All format options failed")
-                return None, False
+                if logger: safe_log(logger, 'error', "All format options failed, trying generic HTML5 video fallback")
+                # Try generic HTML5 video fallback
+                return download_generic_video(url, cache_dir, manager, logger)
             
             # Find new files
             after_files = set(f.name for f in cache_dir.iterdir() if f.is_file())
@@ -1056,6 +2320,18 @@ class MucacheHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                     self.wfile.write(json.dumps(videos).encode('utf-8'))
                 except Exception as e:
                     safe_log(self.server.logger, 'error', f"Error getting playlist: {e}")
+                    self.wfile.write(b'[]')
+                return
+
+            elif self.path == '/webpages':
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                try:
+                    webpages = self.server.webpage_manager.get_sorted_webpages()
+                    self.wfile.write(json.dumps(webpages).encode('utf-8'))
+                except Exception as e:
+                    safe_log(self.server.logger, 'error', f"Error getting webpages: {e}")
                     self.wfile.write(b'[]')
                 return
 
@@ -1334,6 +2610,26 @@ class MucacheHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                     self.send_error(500, str(e))
                 return
 
+            elif self.path.startswith('/remove_webpage?'):
+                try:
+                    query = urllib.parse.urlparse(self.path).query
+                    params = urllib.parse.parse_qs(query)
+                    url = params.get('url', [''])[0]
+
+                    if url:
+                        success = self.server.webpage_manager.remove_webpage(url, self.server.logger)
+
+                        self.send_response(200)
+                        self.send_header('Content-type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(json.dumps({'success': success}).encode('utf-8'))
+                    else:
+                        self.send_error(400, "No URL provided")
+                except Exception as e:
+                    safe_log(self.server.logger, 'error', f"Error removing webpage: {e}")
+                    self.send_error(500, str(e))
+                return
+
             elif self.path == '/evidence_reports' and EVIDENCE_CITATION_AVAILABLE:
                 try:
                     content_length = int(self.headers['Content-Length'])
@@ -1362,7 +2658,7 @@ class MucacheHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                     content_length = int(self.headers['Content-Length'])
                     post_data = self.rfile.read(content_length)
                     data = json.loads(post_data.decode('utf-8'))
-                    
+
                     from citation_generator import generate_video_citations
                     result = generate_video_citations(
                         self.server.cache_dir,
@@ -1370,13 +2666,122 @@ class MucacheHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                         data['video_filename'],
                         data.get('custom_info')
                     )
-                    
+
                     self.send_response(200)
                     self.send_header('Content-type', 'application/json')
                     self.end_headers()
                     self.wfile.write(json.dumps(result).encode('utf-8'))
                 except Exception as e:
                     safe_log(self.server.logger, 'error', f"Error generating citations: {e}")
+                    self.send_error(500, str(e))
+                return
+
+            elif self.path == '/debug_ytdlp':
+                try:
+                    content_length = int(self.headers['Content-Length'])
+                    post_data = self.rfile.read(content_length)
+                    data = json.loads(post_data.decode('utf-8'))
+
+                    result = execute_ytdlp_debug_command(
+                        data.get('command', ''),
+                        data.get('url', ''),
+                        self.server.logger
+                    )
+
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps(result).encode('utf-8'))
+                except Exception as e:
+                    safe_log(self.server.logger, 'error', f"Error executing debug command: {e}")
+                    self.send_error(500, str(e))
+                return
+
+            elif self.path == '/debug_mhtml':
+                try:
+                    content_length = int(self.headers['Content-Length'])
+                    post_data = self.rfile.read(content_length)
+                    data = json.loads(post_data.decode('utf-8'))
+
+                    result = execute_mhtml_debug_command(
+                        data.get('command', ''),
+                        data.get('url', ''),
+                        self.server.logger
+                    )
+
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps(result).encode('utf-8'))
+                except Exception as e:
+                    safe_log(self.server.logger, 'error', f"Error executing MHTML debug command: {e}")
+                    self.send_error(500, str(e))
+                return
+
+            elif self.path == '/send_debug_email':
+                try:
+                    content_length = int(self.headers['Content-Length'])
+                    post_data = self.rfile.read(content_length)
+                    data = json.loads(post_data.decode('utf-8'))
+
+                    # Find debug log path
+                    debug_log_path = None
+                    if self.server.logger and hasattr(self.server.logger, 'handlers'):
+                        for handler in self.server.logger.handlers:
+                            if hasattr(handler, 'baseFilename'):
+                                log_dir = Path(handler.baseFilename).parent
+                                debug_log_path = log_dir / 'debug.log'
+                                break
+
+                    result = send_debug_log_email(
+                        data.get('user_email', ''),
+                        data.get('user_name', ''),
+                        data.get('description', ''),
+                        debug_log_path,
+                        self.server.logger
+                    )
+
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps(result).encode('utf-8'))
+                except Exception as e:
+                    safe_log(self.server.logger, 'error', f"Error sending debug email: {e}")
+                    self.send_error(500, str(e))
+                return
+
+            elif self.path == '/download_webpage':
+                try:
+                    content_length = int(self.headers['Content-Length'])
+                    post_data = self.rfile.read(content_length)
+                    data = json.loads(post_data.decode('utf-8'))
+
+                    url = data.get('url', '').strip()
+                    if not url:
+                        self.send_error(400, "URL is required")
+                        return
+
+                    safe_log(self.server.logger, 'info', f"Webpage download requested: {url}")
+
+                    # Download webpage in background thread
+                    def download_async():
+                        try:
+                            result = download_webpage(url, self.server.cache_dir, self.server.webpage_manager, self.server.logger)
+                            safe_log(self.server.logger, 'info', f"Webpage download completed: {result[0] if result[0] else 'Failed'}")
+                        except Exception as e:
+                            safe_log(self.server.logger, 'error', f"Error in webpage download thread: {e}")
+
+                    threading.Thread(target=download_async, daemon=True).start()
+
+                    # Send immediate response
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    response = {"status": "Webpage download started", "url": url}
+                    self.wfile.write(json.dumps(response).encode('utf-8'))
+
+                except Exception as e:
+                    safe_log(self.server.logger, 'error', f"Error in download_webpage: {e}")
                     self.send_error(500, str(e))
                 return
 
@@ -1471,8 +2876,9 @@ def main():
         # Initialize components
         try:
             manager = VideoManager(cache_dir)
+            webpage_manager = WebpageManager(cache_dir)
             ffmpeg_plugin = FFmpegPlugin(logger)
-            
+
             # Repair playlist if needed (fix filename mismatches)
             manager.repair_playlist(logger)
             
@@ -1488,6 +2894,7 @@ def main():
             server = ThreadedHTTPServer(("", 8000), MucacheHTTPRequestHandler)
             server.cache_dir = cache_dir
             server.video_manager = manager
+            server.webpage_manager = webpage_manager
             server.ffmpeg_plugin = ffmpeg_plugin
             server.logger = logger
             

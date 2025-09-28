@@ -188,14 +188,40 @@
         <h2>Getting Started</h2>
         <p>Mucache Player is a local web application that allows you to download and store videos from supported online platforms for high-quality offline playback. The application now features intelligent quality management and optional FFmpeg integration for enhanced video processing.</p>
         
+        <h3>Starting the Application</h3>
+
         <div class="tip">
-            <strong>Quick Start:</strong>
+            <strong>Windows Users (Recommended):</strong>
             <ol>
-                <li>Run <code>python cache.py</code></li>
+                <li>Double-click <code>start_player.bat</code> in the mucache folder</li>
+                <li>The script will automatically install required dependencies</li>
                 <li>The application will open in your default web browser</li>
-                <li>Paste a video URL and click "Download"</li>
-                <li>Adjust quality settings via the "Quality Settings" button if needed</li>
+                <li>Ready to use - paste a video URL and click "Download"</li>
             </ol>
+        </div>
+
+        <div class="control-example">
+            <strong>Alternative Methods:</strong>
+            <ul>
+                <li><strong>PowerShell:</strong> <code>.\start_player.ps1</code> (enhanced error handling)</li>
+                <li><strong>Command Line:</strong> <code>python cache.py</code> (manual dependency management)</li>
+                <li><strong>Python Direct:</strong> <code>python -m cache</code> (if module installed)</li>
+            </ul>
+        </div>
+
+        <h3>Stopping the Application</h3>
+
+        <div class="warning">
+            <strong>Proper Shutdown Methods:</strong>
+            <ul>
+                <li><strong>Recommended:</strong> Close the browser tab/window - the application detects this and shuts down cleanly</li>
+                <li><strong>Alternative:</strong> Press <code>Ctrl+C</code> in the command/terminal window</li>
+                <li><strong>Emergency:</strong> Close the command/terminal window (may leave temporary files)</li>
+            </ul>
+        </div>
+
+        <div class="note">
+            <strong>Auto-Shutdown Feature:</strong> The application monitors browser connectivity and automatically shuts down when the browser window is closed, ensuring clean resource cleanup.
         </div>
     </div>
 
@@ -281,7 +307,7 @@
             <li><strong>Optional FFmpeg Integration:</strong> High-quality video/audio merging when available</li>
             <li><strong>Superior Playback:</strong> Enhanced audio and video quality from local cache</li>
             <li><strong>Persistent Quality Settings:</strong> Your preferences are saved between sessions</li>
-            <li><strong>Tabbed Playlist:</strong> Filter videos by platform (YouTube, Twitter/X, All)</li>
+            <li><strong>Tabbed Playlist:</strong> Filter videos by platform (YouTube, Twitter/X, Reddit, Archive.org, All)</li>
             <li><strong>Video Details Panel:</strong> View metadata, file size, creation date, and source URLs</li>
             <li><strong>Continuous Playback:</strong> Automatically play through your entire playlist</li>
             <li><strong>Video Controls:</strong> Play, pause, loop, and navigate videos</li>
@@ -296,6 +322,7 @@
                 <li>Smart format fallback system</li>
                 <li>Enhanced error messages with actionable suggestions</li>
                 <li>Improved Twitter/X video support</li>
+                <li>Reddit video support with automatic post ID detection</li>
                 <li>UTF-8 character encoding fixes</li>
             </ul>
         </div>
@@ -320,7 +347,7 @@
 
         <h3>Downloading Videos</h3>
         <ol>
-            <li>Copy the URL of a video from a supported platform (YouTube, Twitter/X, etc.)</li>
+            <li>Copy the URL of a video from a supported platform (YouTube, Twitter/X, Reddit, etc.)</li>
             <li>Paste the URL into the input field</li>
             <li>Click the "Download" button (or press Enter)</li>
             <li>Wait for the download to complete</li>
@@ -329,6 +356,149 @@
 
         <div class="note">
             The application will show whether a video is being downloaded fresh ([NEW]) or loaded from cache ([CACHE]). If downloads fail, check the suggested solutions in the error message.
+        </div>
+
+        <h3>Archiving Webpages</h3>
+        <p>Mucache Player can archive entire webpages as MHTML files, preserving content for research and documentation purposes.</p>
+
+        <h4>How to Archive a Webpage</h4>
+        <ol>
+            <li>Copy the URL of the webpage you want to archive</li>
+            <li>Paste the URL into the input field</li>
+            <li>Click the "Archive Webpage" button</li>
+            <li>Wait for the archiving process to complete</li>
+            <li>The webpage will be saved with full content and metadata</li>
+        </ol>
+
+        <h4>Webpage Features</h4>
+        <ul>
+            <li><strong>Complete Preservation:</strong> Saves webpage content as MHTML files</li>
+            <li><strong>Metadata Extraction:</strong> Captures page title, domain, file size, and archive date</li>
+            <li><strong>Domain Organization:</strong> Organizes archived pages by source domain</li>
+            <li><strong>Search Integration:</strong> Search across webpage titles, domains, and URLs</li>
+            <li><strong>Citation Support:</strong> Generate academic citations for archived webpages</li>
+        </ul>
+
+        <h4>Managing Archived Webpages</h4>
+        <ul>
+            <li><strong>View Archives:</strong> Switch to the "Articles/Webpages" tab to see all archived content</li>
+            <li><strong>Open Archived Content:</strong> Click "Open" to view the saved webpage in a new tab</li>
+            <li><strong>Access Original Source:</strong> Click "Source" to visit the live webpage</li>
+            <li><strong>Remove Archives:</strong> Click "Remove" to delete archived webpages</li>
+            <li><strong>Domain Filtering:</strong> Use search to filter by specific domains</li>
+        </ul>
+
+        <h4>Technical Notes</h4>
+        <ul>
+            <li><strong>Storage Location:</strong> Webpages are saved in <code>mucache/data/webpages/</code></li>
+            <li><strong>File Format:</strong> MHTML format preserves complete webpage content</li>
+            <li><strong>Requirements:</strong> Requires Playwright for webpage capture (optional dependency)</li>
+            <li><strong>File Naming:</strong> Uses sanitized page titles with timestamps</li>
+        </ul>
+
+        <div class="note">
+            <strong>Best Practices:</strong> Archive webpages when conducting research to preserve content that might change or become unavailable. This is especially valuable for news articles, blog posts, and research papers.
+        </div>
+
+        <h3>Unified Search & Organization</h3>
+        <p>Mucache Player provides powerful search and organization tools that work across both videos and webpages.</p>
+
+        <h4>Search Functionality</h4>
+        <ul>
+            <li><strong>Universal Search:</strong> Search across both videos and archived webpages simultaneously</li>
+            <li><strong>Search Criteria:</strong> Matches titles, filenames, domains/platforms, and URLs</li>
+            <li><strong>Real-time Results:</strong> Search results update as you type</li>
+            <li><strong>Type Indicators:</strong> Results show whether items are videos or articles</li>
+            <li><strong>Clear Search:</strong> Use the "Clear" button to return to normal view</li>
+        </ul>
+
+        <h4>Content Organization</h4>
+        <ul>
+            <li><strong>Tab System:</strong> Switch between "Videos" and "Articles/Webpages" tabs</li>
+            <li><strong>Platform Filtering:</strong> Filter videos by platform (YouTube, Twitter/X, Reddit, etc.)</li>
+            <li><strong>Item Counts:</strong> See the number of videos and webpages in each tab</li>
+            <li><strong>Unified Interface:</strong> Consistent controls across all content types</li>
+        </ul>
+
+        <h4>Sorting Options</h4>
+        <p>All content can be sorted using the sorting dropdown:</p>
+        <ul>
+            <li><strong>Date Added (Newest → Oldest):</strong> Most recently added items first</li>
+            <li><strong>Date Added (Oldest → Newest):</strong> Chronological order from first added</li>
+            <li><strong>Title (A → Z):</strong> Alphabetical by title</li>
+            <li><strong>Title (Z → A):</strong> Reverse alphabetical by title</li>
+            <li><strong>Platform/Domain (A → Z):</strong> Group by source platform or domain</li>
+            <li><strong>File Size (Smallest → Largest):</strong> Sort by file size ascending</li>
+            <li><strong>File Size (Largest → Smallest):</strong> Sort by file size descending</li>
+        </ul>
+
+        <h4>Search Examples</h4>
+        <ul>
+            <li><strong>"CNN"</strong> → Shows CNN videos and any archived CNN articles</li>
+            <li><strong>"climate"</strong> → Finds all content with "climate" in titles or descriptions</li>
+            <li><strong>"youtube.com"</strong> → Shows all YouTube videos in your collection</li>
+            <li><strong>"reddit.com"</strong> → Shows Reddit videos and any archived Reddit pages</li>
+        </ul>
+
+        <h4>Sensitive Content in Search</h4>
+        <p>When encryption is enabled, search results include both regular and sensitive content:</p>
+        <ul>
+            <li><strong>Regular Content:</strong> Displays with normal platform/domain labels</li>
+            <li><strong>Sensitive Content:</strong> Shows "🔒 Sensitive" label in addition to platform/domain</li>
+            <li><strong>Unified Results:</strong> Both types appear together in search results</li>
+            <li><strong>Clear Identification:</strong> Easy to distinguish sensitive from regular content</li>
+        </ul>
+
+        <div class="note">
+            <strong>Pro Tip:</strong> Use the unified search to quickly find related content across different media types. Sensitive content is clearly marked but fully searchable, giving you complete access to your archive while maintaining security awareness.
+        </div>
+
+        <h3>Advanced Settings</h3>
+        <p>Access advanced configuration options including download quality and secure content storage.</p>
+
+        <h4>Accessing Advanced Settings</h4>
+        <ol>
+            <li>Click the "Advanced Settings" button in the player interface</li>
+            <li>Configure download quality preferences</li>
+            <li>Set up encryption for sensitive content</li>
+            <li>Review current FFmpeg status</li>
+        </ol>
+
+        <h4>Download Quality Settings</h4>
+        <ul>
+            <li><strong>Reliable:</strong> Standard quality downloads that work on all systems</li>
+            <li><strong>Medium:</strong> Balanced quality and compatibility</li>
+            <li><strong>High:</strong> Best quality downloads (requires FFmpeg installation)</li>
+        </ul>
+
+        <h4>Secure Content Storage</h4>
+        <p>For sensitive material, enable encrypted storage with these features:</p>
+        <ul>
+            <li><strong>Separate Directory:</strong> Encrypted content stored in <code>mucache/data/secure/</code></li>
+            <li><strong>Password Protection:</strong> Password required each session (not stored)</li>
+            <li><strong>Content Labeling:</strong> Encrypted content marked as "🔒 Sensitive" in search results</li>
+            <li><strong>Isolation:</strong> No mixing of encrypted and regular files</li>
+        </ul>
+
+        <h4>Setting Up Encryption</h4>
+        <ol>
+            <li>Open Advanced Settings</li>
+            <li>Enter a strong password in the "Encryption Password" field</li>
+            <li>Future downloads will be stored in the secure directory</li>
+            <li>Search results will merge both regular and sensitive content</li>
+            <li>Password must be re-entered each time you start the application</li>
+        </ol>
+
+        <h4>Important Security Notes</h4>
+        <ul>
+            <li><strong>Password Safety:</strong> The encryption password is never stored or logged</li>
+            <li><strong>Session-Only:</strong> Password exists only in memory during use</li>
+            <li><strong>Data Separation:</strong> Encrypted and regular content are never mixed</li>
+            <li><strong>Recovery:</strong> If you forget the password, encrypted content cannot be recovered</li>
+        </ul>
+
+        <div class="note">
+            <strong>Best Practice:</strong> Use encryption for sensitive research materials, confidential documents, or content that requires additional privacy protection. The encryption feature ensures complete separation from regular downloads.
         </div>
 
         <h3>Playing Videos</h3>
@@ -461,7 +631,7 @@
         <ul>
             <li>Videos are automatically added to the playlist when downloaded</li>
             <li>Videos are automatically sorted alphabetically by title</li>
-            <li>Use the tabs (All Videos, YouTube, Twitter/X, Archive.org) to filter the playlist</li>
+            <li>Use the tabs (All Videos, YouTube, Twitter/X, Reddit, Archive.org) to filter the playlist</li>
             <li>Click on any video in the playlist to play it</li>
             <li>The currently playing video is highlighted in the playlist</li>
             <li>Click the "Source" button to open the original video in your browser</li>
@@ -474,6 +644,7 @@
         <ul>
             <li><strong>YouTube:</strong> Videos from youtube.com and youtu.be (full format support)</li>
             <li><strong>Twitter/X:</strong> Videos from twitter.com and x.com (specialized extraction)</li>
+            <li><strong>Reddit:</strong> Videos from reddit.com and redd.it (automatic post ID detection)</li>
             <li><strong>Archive.org:</strong> Videos from archive.org (Internet Archive) with metadata support</li>
             <li><strong>Other platforms:</strong> Many other video platforms supported through yt-dlp</li>
         </ul>
@@ -539,6 +710,58 @@
         <div class="note">
             <p>The application automatically detects the source platform and uses the appropriate download method. Archive.org videos use direct API access to find the best quality video files available for each item.</p>
         </div>
+
+        <h3>Reddit Support Details</h3>
+        <div class="new-feature">
+            <p>Reddit video support includes:</p>
+            <ul>
+                <li><strong>Automatic URL detection:</strong> Supports both reddit.com and redd.it short URLs</li>
+                <li><strong>Post ID extraction:</strong> Automatically extracts Reddit post IDs for consistent file naming</li>
+                <li><strong>yt-dlp integration:</strong> Uses yt-dlp for reliable video extraction from Reddit's hosting</li>
+                <li><strong>Quality options:</strong> Supports all three quality levels (Reliable, Medium, High)</li>
+                <li><strong>FFmpeg integration:</strong> When available, uses FFmpeg for enhanced video processing</li>
+                <li><strong>Smart naming:</strong> Files are named with format "Reddit_PostID_VideoTitle.mp4" for easy identification</li>
+                <li><strong>Error handling:</strong> Comprehensive error handling with helpful diagnostic messages</li>
+            </ul>
+        </div>
+
+        <h3>Using Reddit Video Downloads</h3>
+        <ol>
+            <li>Navigate to a Reddit post containing a video (any subreddit)</li>
+            <li>Copy the post URL from your browser's address bar</li>
+            <li>Paste the URL into Mucache Player's input field</li>
+            <li>Click "Download" and wait for completion</li>
+            <li>The video will appear in the Reddit tab of your playlist</li>
+        </ol>
+
+        <h3>Supported Reddit URL Formats</h3>
+        <ul>
+            <li><code>https://www.reddit.com/r/subreddit/comments/postid/title/</code> - Standard Reddit post URL</li>
+            <li><code>https://reddit.com/r/subreddit/comments/postid/title/</code> - Without www prefix</li>
+            <li><code>https://redd.it/postid</code> - Reddit short URLs</li>
+            <li><code>redd.it/postid</code> - Short URLs without protocol (automatically added)</li>
+        </ul>
+
+        <div class="tip">
+            <strong>Reddit Video Tips:</strong>
+            <ul>
+                <li><strong>File naming:</strong> Videos are automatically named with the Reddit post ID for easy reference</li>
+                <li><strong>Quality selection:</strong> Start with "Reliable" if you encounter download issues</li>
+                <li><strong>Platform filtering:</strong> Use the Reddit tab to view only Reddit videos in your playlist</li>
+                <li><strong>Original source:</strong> Click "Source" in video details to return to the original Reddit post</li>
+                <li><strong>Cross-posting:</strong> Works with videos regardless of which subreddit they're posted in</li>
+            </ul>
+        </div>
+
+        <div class="warning">
+            <strong>Reddit Video Limitations:</strong>
+            <ul>
+                <li>Only works with videos hosted on Reddit's own video platform (v.redd.it)</li>
+                <li>External video links (YouTube, etc.) should be downloaded using their original URLs</li>
+                <li>Some Reddit videos may not have audio tracks (common on Reddit mobile app uploads)</li>
+                <li>Very old Reddit posts may use different hosting that isn't supported</li>
+            </ul>
+        </div>
     </div>
 
     <div class="section">
@@ -563,6 +786,8 @@
             <li><strong>Check if FFmpeg is required</strong> for your desired quality level</li>
             <li><strong>For Archive.org:</strong> Verify the item exists and contains video files</li>
             <li><strong>For large Archive.org files:</strong> Ensure stable internet connection for complete downloads</li>
+            <li><strong>For Reddit:</strong> Ensure the post contains a native Reddit video (v.redd.it), not external links</li>
+            <li><strong>For Reddit issues:</strong> Try using the full reddit.com URL instead of redd.it short links</li>
         </ul>
 
         <h3>Video Playback Issues</h3>
@@ -573,11 +798,51 @@
         </ul>
 
         <h3>Application Startup Problems</h3>
-        <ul>
-            <li><strong>Make sure port 8000 is available</strong> and not used by other applications</li>
-            <li><strong>Verify Python installation</strong> and required dependencies</li>
-            <li><strong>Check the logs directory</strong> for startup error messages</li>
-        </ul>
+
+        <div class="warning">
+            <strong>Common Startup Issues:</strong>
+            <ul>
+                <li><strong>"ModuleNotFoundError: No module named 'yt_dlp'"</strong>
+                    <ul>
+                        <li>Use <code>start_player.bat</code> instead of <code>python cache.py</code></li>
+                        <li>The batch file automatically installs missing dependencies</li>
+                        <li>Or manually run: <code>pip install yt-dlp requests</code></li>
+                    </ul>
+                </li>
+                <li><strong>"Python is not recognized"</strong>
+                    <ul>
+                        <li>Install Python 3.6+ from <a href="https://python.org" target="_blank">python.org</a></li>
+                        <li>Make sure to check "Add Python to PATH" during installation</li>
+                        <li>Restart command prompt after Python installation</li>
+                    </ul>
+                </li>
+                <li><strong>"Port 8000 is already in use"</strong>
+                    <ul>
+                        <li>Close other applications using port 8000</li>
+                        <li>Or wait a few minutes and try again</li>
+                        <li>Check for other Mucache instances running</li>
+                    </ul>
+                </li>
+                <li><strong>"Permission denied" errors</strong>
+                    <ul>
+                        <li>Run command prompt as Administrator</li>
+                        <li>Or use PowerShell: <code>.\start_player.ps1</code></li>
+                        <li>Check antivirus software blocking the application</li>
+                    </ul>
+                </li>
+            </ul>
+        </div>
+
+        <div class="tip">
+            <strong>Startup Troubleshooting Steps:</strong>
+            <ol>
+                <li>Always use <code>start_player.bat</code> for Windows</li>
+                <li>Check the command window for error messages</li>
+                <li>Look in <code>logs/app.log</code> for detailed startup logs</li>
+                <li>Ensure no other web servers are running on port 8000</li>
+                <li>Try running as Administrator if permission issues occur</li>
+            </ol>
+        </div>
     </div>
 
     <div class="section">

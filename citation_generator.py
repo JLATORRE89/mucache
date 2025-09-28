@@ -17,6 +17,42 @@ class CitationGenerator:
         self.citations_dir = self.cache_dir / "citations"
         self.citations_dir.mkdir(exist_ok=True)
     
+    def generate_webpage_citations(self, webpage_url, webpage_data, custom_info=None):
+        """Generate citations for archived webpages in multiple academic formats."""
+        try:
+            # Extract citation data for webpage
+            citation_data = self._extract_webpage_citation_data(webpage_url, webpage_data, custom_info)
+
+            # Generate multiple citation formats
+            citations = {
+                "APA": self._generate_apa_citation(citation_data),
+                "MLA": self._generate_mla_citation(citation_data),
+                "Chicago": self._generate_chicago_citation(citation_data),
+                "Harvard": self._generate_harvard_citation(citation_data),
+                "IEEE": self._generate_ieee_citation(citation_data),
+                "Vancouver": self._generate_vancouver_citation(citation_data),
+                "BibTeX": self._generate_bibtex_citation(citation_data)
+            }
+
+            # Save citations to file
+            citation_filename = f"citations_{self._clean_filename(citation_data['title'])}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            citation_path = self.citations_dir / citation_filename
+
+            self._save_citations_file(citations, citation_data, citation_path)
+
+            return {
+                "success": True,
+                "citations": citations,
+                "citation_data": citation_data,
+                "file_path": str(citation_path)
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
     def generate_citations(self, video_url, video_filename, custom_info=None):
         """Generate citations in multiple academic formats."""
         try:
@@ -104,7 +140,47 @@ class CitationGenerator:
             citation_data.update(custom_info)
         
         return citation_data
-    
+
+    def _extract_webpage_citation_data(self, webpage_url, webpage_data, custom_info):
+        """Extract and standardize citation data from webpage metadata."""
+        access_date = datetime.datetime.now().strftime('%Y-%m-%d')
+        archive_date = self._parse_date(webpage_data.get('saved_date'))
+
+        # Extract author from webpage title or domain
+        author = 'Unknown Author'
+        domain = webpage_data.get('domain', '')
+
+        # Try to parse author from title patterns
+        title = webpage_data.get('title', 'Untitled Webpage')
+        if ' by ' in title:
+            parts = title.split(' by ')
+            if len(parts) > 1:
+                author = parts[-1].strip()
+                title = parts[0].strip()
+
+        citation_data = {
+            "title": title,
+            "creator": author,
+            "author": author,
+            "original_date": '',  # Usually not available for webpages
+            "archive_date": archive_date,
+            "access_date": access_date,
+            "archive_url": f"/mucache/webpages/{webpage_data.get('filename', '')}",
+            "original_url": webpage_url,
+            "webpage_filename": webpage_data.get('filename', ''),
+            "domain": domain,
+            "source_type": "Archived Webpage",
+            "platform": "Mucache Archive",
+            "file_size": webpage_data.get('filesize', 0),
+            "archive_system": "Mucache Player"
+        }
+
+        # Apply custom information if provided
+        if custom_info:
+            citation_data.update(custom_info)
+
+        return citation_data
+
     def _parse_date(self, date_string):
         """Parse various date formats into a standardized format."""
         if not date_string or date_string == 'Unknown':
@@ -137,41 +213,53 @@ class CitationGenerator:
     def _generate_apa_citation(self, data):
         """Generate APA format citation."""
         citation = f"{data['creator']} ({data['original_date'] or 'n.d.'}). {data['title']}"
-        
-        if data['runtime']:
-            citation += f" [Video file, {data['runtime']}]"
+
+        # Handle different source types
+        if data['source_type'] == 'Archived Webpage':
+            citation += " [Archived webpage]"
+            if data.get('domain'):
+                citation += f". {data['domain']}"
         else:
-            citation += " [Video file]"
-        
-        citation += f". {data['platform']}"
-        
+            # Video handling
+            if data['runtime']:
+                citation += f" [Video file, {data['runtime']}]"
+            else:
+                citation += " [Video file]"
+            citation += f". {data['platform']}"
+
         if data['original_url']:
             citation += f". Originally published at {data['original_url']}"
-        
+
         if data['archive_date']:
             citation += f". Archived {data['archive_date']}"
-        
+
         citation += f". Retrieved {data['access_date']}, from {data['archive_url']}"
-        
+
         return citation
     
     def _generate_mla_citation(self, data):
         """Generate MLA format citation."""
         citation = f"{data['creator']}. \"{data['title']}.\""
-        
-        if data['original_platform'] and data['original_platform'] != 'Unknown Platform':
-            citation += f" {data['original_platform']},"
-        
+
+        # Handle different source types
+        if data['source_type'] == 'Archived Webpage':
+            if data.get('domain'):
+                citation += f" {data['domain']},"
+        else:
+            # Video handling
+            if data['original_platform'] and data['original_platform'] != 'Unknown Platform':
+                citation += f" {data['original_platform']},"
+
         if data['original_date']:
             citation += f" {data['original_date']},"
-        
+
         citation += f" {data['platform']}"
-        
+
         if data['archive_date']:
             citation += f", {data['archive_date']}"
-        
+
         citation += f". Web. {data['access_date']}. <{data['archive_url']}>"
-        
+
         return citation
     
     def _generate_chicago_citation(self, data):
